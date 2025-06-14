@@ -1,6 +1,35 @@
-use crate::cpu::{decoder::Instruction, CPU};
+use crate::cpu::{decoder::{Cause, Instruction}, CPU};
 
 impl CPU {
+    pub fn div(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+
+        let dividend = self.R[rs] as i32;
+        let divisor = self.R[rt] as i32;
+
+        if divisor == 0 {return}
+        if dividend == i32::MIN && divisor == -1 {
+            (self.lo, self.hi) = (i32::MIN as u32, 0);
+            return;
+        }
+
+        let (quotient, remainder) = (dividend / divisor, dividend % divisor);
+        (self.lo, self.hi) = (quotient as u32, remainder as u32);
+    }
+
+    pub fn divu(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+
+        let dividend = self.R[rs];
+        let divisor = self.R[rt];
+
+        if divisor == 0 {return}
+
+        (self.lo, self.hi) = (dividend / divisor, dividend % divisor);
+    }
+
     pub fn add(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -12,7 +41,7 @@ impl CPU {
         if let Some(value) = a.checked_add(b) {
             self.write_register(rd, value as u32);
         } else {
-            self.raise_exception();
+            self.raise_exception(Cause::Ovf);
         }
     }
 
@@ -43,7 +72,7 @@ impl CPU {
         if let Some(value) = (self.R[rs] as i32).checked_add(imm) {
             self.write_register(rt, value as u32);
         } else {
-            self.raise_exception();
+            self.raise_exception(Cause::Ovf);
         }
     }
 

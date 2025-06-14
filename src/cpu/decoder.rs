@@ -47,3 +47,16 @@ impl Instruction for u32 {
         *self as i16 as u32
     }
 }
+
+pub enum Cause {
+    INT = 0x00,
+    AdEL = 0x04,
+    AdES = 0x05,
+    IBE = 0x06,
+    DBE = 0x07,
+    Sys = 0x08,
+    Bp = 0x09,
+    RI = 0x0A,
+    CpU = 0x0B,
+    Ovf = 0x0C,
+}

@@ -10,6 +10,15 @@ impl CPU {
         self.write_register(rd, value);
     }
 
+    pub fn srl(&mut self, instruction: u32) {
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+        let shamt = instruction.shamt();
+
+        let value = self.R[rt] >> shamt;
+        self.write_register(rd, value);
+    }
+
     pub fn sra(&mut self, instruction: u32) {
         let rt = instruction.rt();
         let rd = instruction.rd();

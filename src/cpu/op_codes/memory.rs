@@ -1,4 +1,4 @@
-use crate::cpu::{decoder::Instruction, CPU};
+use crate::cpu::{decoder::{Cause, Instruction}, CPU};
 
 impl CPU {
     pub fn lb(&mut self, instruction: u32) {
@@ -18,6 +18,11 @@ impl CPU {
         let offset = instruction.imm_se();
 
         let addr = self.R[rs].wrapping_add(offset);
+        if addr & 0b11 != 0 {
+            self.raise_exception(Cause::AdEL);
+            return;
+        }
+
         let value = self.read32(addr);
         self.schedule_write(rt, value);
     }
@@ -30,6 +35,21 @@ impl CPU {
         let addr = self.R[rs].wrapping_add(offset);
         let value = self.read8(addr) as u32;
 
+        self.schedule_write(rt, value);
+    }
+
+    pub fn lhu(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let offset = instruction.imm_se();
+
+        let addr = self.R[rs].wrapping_add(offset);
+        if addr & 0b1 != 0 {
+            self.raise_exception(Cause::AdEL);
+            return;
+        }
+
+        let value = self.read16(addr) as u32;
         self.schedule_write(rt, value);
     }
 
@@ -50,8 +70,12 @@ impl CPU {
         let offset = instruction.imm_se();
 
         let addr = self.R[rs].wrapping_add(offset);
-        let value = self.R[rt] as u16;
+        if addr & 0b1 != 0 {
+            self.raise_exception(Cause::AdES);
+            return;
+        }
 
+        let value = self.R[rt] as u16;
         self.write16(addr, value);
     }
 
@@ -61,8 +85,12 @@ impl CPU {
         let offset = instruction.imm_se();
 
         let addr = self.R[rs].wrapping_add(offset);
-        let value = self.R[rt];
+        if addr & 0b11 != 0 {
+            self.raise_exception(Cause::AdES);
+            return;
+        }
 
+        let value = self.R[rt];
         self.write32(addr, value);
     }
 }

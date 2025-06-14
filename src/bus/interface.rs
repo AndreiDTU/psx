@@ -34,18 +34,6 @@ impl Interface {
         Ok(Self { bios, dram })
     }
 
-    pub fn write32(&mut self, addr: u32, value: u32) {
-        if addr & 0b11 != 0 {panic!("Unaligned write at {:08X}", addr)}
-
-        let addr = mask_region(addr);
-        match addr {
-            DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
-            IO_START..IO_END => {}
-            CACHE_CONTROL..CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
-            _ => panic!("Write access at unmapped address: {:08X}", addr),
-        }
-    }
-
     pub fn read32(&self, addr: u32) -> u32 {
         if addr & 0b11 != 0 {panic!("Unaligned read at {:08X}", addr)}
         
@@ -53,6 +41,17 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
+            IO_START..IO_END => 0,
+            _ => panic!("Read access at unmapped address: {:08X}", addr),
+        }
+    }
+
+    pub fn read16(&self, addr: u32) -> u16 {
+        if addr & 0b1 != 0 {panic!("Unaligned read at {:08X}", addr)}
+        
+        let addr = mask_region(addr);
+        match addr {
+            DRAM_START..DRAM_END => self.dram.read16(addr - DRAM_START),
             IO_START..IO_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
@@ -68,11 +67,24 @@ impl Interface {
         }
     }
 
+    pub fn write32(&mut self, addr: u32, value: u32) {
+        if addr & 0b11 != 0 {panic!("Unaligned write at {:08X}", addr)}
+
+        let addr = mask_region(addr);
+        match addr {
+            DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
+            IO_START..IO_END => {}
+            CACHE_CONTROL..CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
+            _ => panic!("Write access at unmapped address: {:08X}", addr),
+        }
+    }
+
     pub fn write16(&mut self, addr: u32, value: u16) {
         if addr & 1 != 0 {panic!("Unaligned 16-bit write at: {:08X}", addr)}
 
         let addr = mask_region(addr);
         match addr {
+            DRAM_START..DRAM_END => self.dram.write16(addr - DRAM_START, value),
             IO_START..IO_END => {}
             _ => panic!("Write 16-bit access at unmapped address: {:08X}", addr),
         }
