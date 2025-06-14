@@ -1,6 +1,21 @@
 use crate::cpu::{decoder::Instruction, CPU};
 
 impl CPU {
+    pub fn add(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let a = self.R[rs] as i32;
+        let b = self.R[rt] as i32;
+        
+        if let Some(value) = a.checked_add(b) {
+            self.write_register(rd, value as u32);
+        } else {
+            self.raise_exception();
+        }
+    }
+
     pub fn addu(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -9,14 +24,24 @@ impl CPU {
         let value = self.R[rs].wrapping_add(self.R[rt]);
         self.write_register(rd, value);
     }
+
+    pub fn subu(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let value = self.R[rs].wrapping_sub(self.R[rt]);
+
+        self.write_register(rd, value);
+    }
     
     pub fn addi(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
-        let imm = instruction.imm_se();
+        let imm = instruction.imm_se() as i32;
 
-        if let Some(value) = self.R[rs].checked_add(imm) {
-            self.write_register(rt, value);
+        if let Some(value) = (self.R[rs] as i32).checked_add(imm) {
+            self.write_register(rt, value as u32);
         } else {
             self.raise_exception();
         }

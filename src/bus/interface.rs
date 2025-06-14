@@ -39,9 +39,9 @@ impl Interface {
 
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..=DRAM_END => self.dram.write32(addr - DRAM_START, value),
-            IO_START..=IO_END => {}
-            CACHE_CONTROL..=CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
+            DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
+            IO_START..IO_END => {}
+            CACHE_CONTROL..CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
             _ => panic!("Write access at unmapped address: {:08X}", addr),
         }
     }
@@ -51,9 +51,9 @@ impl Interface {
         
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..=DRAM_END => self.dram.read32(addr - DRAM_START),
-            BIOS_START..=BIOS_END => self.bios.read32(addr - BIOS_START),
-            IO_START..=IO_END => 0,
+            DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
+            BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
+            IO_START..IO_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
     }
@@ -61,9 +61,9 @@ impl Interface {
     pub fn read8(&self, addr: u32) -> u8 {
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..=DRAM_END => self.dram.read8(addr - DRAM_START),
-            EXPANSION_1_START..=EXPANSION_1_END => 0xFF,
-            BIOS_START..=BIOS_END => self.bios.read8(addr - BIOS_START),
+            DRAM_START..DRAM_END => self.dram.read8(addr - DRAM_START),
+            EXPANSION_1_START..EXPANSION_1_END => 0xFF,
+            BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -73,7 +73,7 @@ impl Interface {
 
         let addr = mask_region(addr);
         match addr {
-            IO_START..=IO_END => {}
+            IO_START..IO_END => {}
             _ => panic!("Write 16-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -81,8 +81,8 @@ impl Interface {
     pub fn write8(&mut self, addr: u32, value: u8) {
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..=DRAM_END => self.dram.write8(addr - DRAM_START, value),
-            EXPANSION_2_START..=EXPANSION_2_END => {}
+            DRAM_START..DRAM_END => self.dram.write8(addr - DRAM_START, value),
+            EXPANSION_2_START..EXPANSION_2_END => {}
             _ => panic!("Write 8-bit access at unmapped address: {:08X}", addr),
         }
     }
