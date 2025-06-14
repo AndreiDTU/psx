@@ -18,6 +18,19 @@ impl CPU {
         (self.lo, self.hi) = (quotient as u32, remainder as u32);
     }
 
+    pub fn multu(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+
+        let a = self.R[rs] as u64;
+        let b = self.R[rt] as u64;
+
+        let value = a * b;
+
+        self.lo = value as u32;
+        self.hi = (value >> 32) as u32;
+    }
+
     pub fn divu(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();

@@ -15,6 +15,9 @@ const BIOS_END: u32 = BIOS_START + (512 * 1024);
 const IO_START: u32 = 0x1F801000;
 const IO_END: u32 = IO_START + (4 * 1024);
 
+const GPU_START: u32 = 0x1F801810;
+const GPU_END: u32 = GPU_START + 8;
+
 const EXPANSION_2_START: u32 = 0x1F802000;
 const EXPANSION_2_END: u32 = EXPANSION_2_START + 66;
 
@@ -41,6 +44,13 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
+            GPU_START..GPU_END => {
+                let offset = addr - GPU_START;
+                match offset {
+                    4 => 0x1000_0000,
+                    _ => 0,
+                }
+            }
             IO_START..IO_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
