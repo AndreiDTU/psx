@@ -4,6 +4,7 @@ impl CPU {
     pub fn jr(&mut self, instruction: u32) {
         let rs = instruction.rs();
 
+        self.branch = true;
         self.next_pc = self.R[rs];
     }
 
@@ -13,6 +14,7 @@ impl CPU {
 
         self.write_register(rd, self.next_pc);
 
+        self.branch = true;
         self.next_pc = self.R[rs];
     }
 
@@ -62,16 +64,16 @@ impl CPU {
         let rs = instruction.rs();
         let offset = instruction.imm_se();
 
-        let greater = (instruction >> 16) & 1 != 0;
+        let greater = (instruction >> 16) & 1;
         let link = (instruction >> 17) & 0xF == 8;
 
         let value = self.R[rs] as i32;
 
-        let test = (value < 0) ^ greater;
+        let test = ((value < 0) as u32) ^ greater;
 
         if link {self.write_register(31, self.next_pc)}
 
-        if test {
+        if test != 0 {
             self.branch(offset);
         }
     }
@@ -100,7 +102,7 @@ impl CPU {
         let rs = instruction.rs();
         let offset = instruction.imm_se();
 
-        if (self.R[rs] as i32) < 0 {
+        if (self.R[rs] as i32) <= 0 {
             self.branch(offset);
         }
     }
@@ -117,6 +119,7 @@ impl CPU {
     pub fn j(&mut self, instruction: u32) {
         let target = instruction.target();
 
+        self.branch = true;
         self.next_pc = (self.next_pc & 0xF000_0000) | (target << 2);
     }
 
@@ -154,6 +157,7 @@ impl CPU {
     fn branch(&mut self, offset: u32) {
         let offset = offset << 2;
 
+        self.branch = true;
         self.next_pc = self.next_pc.wrapping_add(offset).wrapping_sub(4);
     }
 }

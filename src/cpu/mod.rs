@@ -15,10 +15,14 @@ pub struct CPU {
     current_pc: u32,
     next_pc: u32,
     pending_writes: [Option<(u32, u32)>; 2],
+    branch: bool,
+    delay_slot: bool,
 
     system_control: SystemControl,
 
-    interface: Rc<RefCell<Interface>>
+    interface: Rc<RefCell<Interface>>,
+
+    trace: bool,
 }
 
 impl CPU {
@@ -36,15 +40,22 @@ impl CPU {
             current_pc: pc,
             next_pc: pc.wrapping_add(4),
             pending_writes: [None; 2],
+            branch: false,
+            delay_slot: false,
 
             system_control: SystemControl::new(),
 
             interface,
+
+            trace: false
         }
     }
 
     pub fn tick(&mut self) {
         let instruction = self.read32(self.pc);
+
+        self.delay_slot = self.branch;
+        self.branch = false;
 
         self.current_pc = self.pc;
 
@@ -60,7 +71,7 @@ impl CPU {
     }
 
     pub fn execute(&mut self, instruction: u32) {
-        // println!("instruction: {:08X}, pc: {:08X}, R31: {:08X}", instruction, self.pc, self.R[31]);
+        if self.trace {println!("instruction: {:08X}, pc: {:08X}, R31: {:08X}", instruction, self.pc, self.R[31])};
         let op = instruction.op();
         match op {
             0b000000 => {
@@ -69,6 +80,7 @@ impl CPU {
                     0b000000 => self.sll(instruction),
                     0b000010 => self.srl(instruction),
                     0b000011 => self.sra(instruction),
+                    0b000100 => self.sllv(instruction),
                     0b001100 => self.raise_exception(Cause::Sys),
                     0b001000 => self.jr(instruction),
                     0b001001 => self.jalr(instruction),
@@ -83,6 +95,7 @@ impl CPU {
                     0b100011 => self.subu(instruction),
                     0b100100 => self.and(instruction),
                     0b100101 => self.or(instruction),
+                    0b100111 => self.nor(instruction),
                     0b101010 => self.slt(instruction),
                     0b101011 => self.sltu(instruction),
                     _ => panic!("{:08X} Unsupported funct: {:06b}..{:06b}", instruction, op, funct),
@@ -112,6 +125,7 @@ impl CPU {
                 }
             }
             0b100000 => self.lb(instruction),
+            0b100001 => self.lh(instruction),
             0b100011 => self.lw(instruction),
             0b100100 => self.lbu(instruction),
             0b100101 => self.lhu(instruction),
@@ -123,7 +137,9 @@ impl CPU {
     }
 
     fn raise_exception(&mut self, cause: Cause) {
-        self.pc = if self.system_control.raise_exception(cause, self.current_pc) {
+        println!("Raised exception on cause: {:#?}", cause);
+
+        self.pc = if self.system_control.raise_exception(cause as u32, self.current_pc, self.delay_slot) {
             0xBFC0_0180
         } else {
             0x8000_0080

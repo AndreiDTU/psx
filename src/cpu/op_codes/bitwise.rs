@@ -28,6 +28,15 @@ impl CPU {
         self.write_register(rd, value as u32);
     }
 
+    pub fn sllv(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let value = self.R[rt] << (self.R[rs] & 0x1F);
+        self.write_register(rd, value);
+    }
+
     pub fn and(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -43,6 +52,15 @@ impl CPU {
         let rd = instruction.rd();
 
         let value = self.R[rs] | self.R[rt];
+        self.write_register(rd, value);
+    }
+
+    pub fn nor(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let value = !(self.R[rs] | self.R[rt]);
         self.write_register(rd, value);
     }
 
