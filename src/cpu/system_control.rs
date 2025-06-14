@@ -1,4 +1,4 @@
-use crate::cpu::{Registers, CPU};
+use crate::cpu::Registers;
 
 pub struct SystemControl {
     R: Registers<64>

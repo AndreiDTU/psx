@@ -10,6 +10,15 @@ impl CPU {
         self.write_register(rd, value);
     }
 
+    pub fn and(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let value = self.R[rs] & self.R[rt];
+        self.write_register(rd, value);
+    }
+
     pub fn or(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -17,6 +26,16 @@ impl CPU {
 
         let value = self.R[rs] | self.R[rt];
         self.write_register(rd, value);
+    }
+
+    pub fn andi(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let imm = instruction.imm();
+
+        let value = self.R[rs] & imm;
+
+        self.write_register(rt, value);
     }
 
     pub fn ori(&mut self, instruction: u32) {
@@ -27,5 +46,5 @@ impl CPU {
         let value = self.R[rs] | imm;
 
         self.write_register(rt, value);
-    }   
+    }
 }

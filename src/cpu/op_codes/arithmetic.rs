@@ -1,6 +1,15 @@
 use crate::cpu::{decoder::Instruction, CPU};
 
 impl CPU {
+    pub fn addu(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let value = self.R[rs].wrapping_add(self.R[rt]);
+        self.write_register(rd, value);
+    }
+    
     pub fn addi(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();

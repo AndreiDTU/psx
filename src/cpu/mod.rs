@@ -52,31 +52,42 @@ impl CPU {
     }
 
     pub fn execute(&mut self, instruction: u32) {
-        println!("instruction: {:08X}", instruction);
+        println!("instruction: {:08X}, pc: {:08X}", instruction, self.pc);
         let op = instruction.op();
         match op {
             0b000000 => {
                 let funct = instruction.funct();
                 match funct {
                     0b000000 => self.sll(instruction),
+                    0b001000 => self.jr(instruction),
+                    0b100001 => self.addu(instruction),
+                    0b100100 => self.and(instruction),
                     0b100101 => self.or(instruction),
+                    0b101011 => self.sltu(instruction),
                     _ => panic!("Unsupported funct: {:06b}..{:06b}", op, funct),
                 }
             },
             0b000010 => self.j(instruction),
+            0b000011 => self.jal(instruction),
+            0b000100 => self.beq(instruction),
             0b000101 => self.bne(instruction),
             0b001000 => self.addi(instruction),
             0b001001 => self.addiu(instruction),
+            0b001100 => self.andi(instruction),
             0b001101 => self.ori(instruction),
             0b001111 => self.lui(instruction),
             0b010000 => {
                 let cop_instruction = instruction.rs();
                 match cop_instruction {
+                    0b00000 => self.mfc0(instruction),
                     0b00100 => self.mtc0(instruction),
-                    _ => panic!("Unsupported cop_op: {:06b}..{:06b}", op, cop_instruction)
+                    _ => panic!("Unsupported cop0 op: {:06b}..{:06b}", op, cop_instruction)
                 }
             }
+            0b100000 => self.lb(instruction),
             0b100011 => self.lw(instruction),
+            0b101000 => self.sb(instruction),
+            0b101001 => self.sh(instruction),
             0b101011 => self.sw(instruction),
             _ => panic!("Unsupported op: {:06b}", op),
         }
@@ -93,6 +104,26 @@ impl CPU {
 
     fn read32(&self, addr: u32) -> u32 {
         self.interface.borrow().read32(addr)
+    }
+
+    fn read8(&self, addr: u32) -> u8 {
+        self.interface.borrow().read8(addr)
+    }
+
+    fn write16(&mut self, addr: u32, value: u16) {
+        if self.system_control.read_register(12) & 0x10000 != 0 {
+            println!("Cache not implemented");
+            return;
+        }
+        self.interface.borrow_mut().write16(addr, value);
+    }
+
+    fn write8(&mut self, addr: u32, value: u8) {
+        if self.system_control.read_register(12) & 0x10000 != 0 {
+            println!("Cache not implemented");
+            return;
+        }
+        self.interface.borrow_mut().write8(addr, value);
     }
 
     fn write_register(&mut self, register: u32, value: u32) {
@@ -118,6 +149,7 @@ impl CPU {
     }
 }
 
+#[derive(Debug)]
 struct Registers<const N: usize> {
     R: [u32; N],
 }
