@@ -18,6 +18,19 @@ impl CPU {
         (self.lo, self.hi) = (quotient as u32, remainder as u32);
     }
 
+    pub fn mult(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+
+        let a = self.R[rs] as i32 as i64;
+        let b = self.R[rt] as i32 as i64;
+
+        let value = (a * b) as u64;
+
+        self.lo = value as u32;
+        self.hi = (value >> 32) as u32;
+    }
+
     pub fn multu(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -66,6 +79,21 @@ impl CPU {
 
         let value = self.R[rs].wrapping_add(self.R[rt]);
         self.write_register(rd, value);
+    }
+
+    pub fn sub(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let rd = instruction.rd();
+
+        let a = self.R[rs] as i32;
+        let b = self.R[rt] as i32;
+
+        if let Some(value) = a.checked_sub(b) {
+            self.write_register(rd, value as u32);
+        } else {
+            self.raise_exception(Cause::Ovf);
+        }
     }
 
     pub fn subu(&mut self, instruction: u32) {

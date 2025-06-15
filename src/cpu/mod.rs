@@ -84,17 +84,20 @@ impl CPU {
                     0b000110 => self.srlv(instruction),
                     0b000111 => self.srav(instruction),
                     0b001100 => self.raise_exception(Cause::Sys),
+                    0b001101 => self.raise_exception(Cause::Bp),
                     0b001000 => self.jr(instruction),
                     0b001001 => self.jalr(instruction),
                     0b010000 => self.mfhi(instruction),
                     0b010001 => self.mthi(instruction),
                     0b010010 => self.mflo(instruction),
                     0b010011 => self.mtlo(instruction),
-                    0b011010 => self.div(instruction),
+                    0b011000 => self.mult(instruction),
                     0b011001 => self.multu(instruction),
+                    0b011010 => self.div(instruction),
                     0b011011 => self.divu(instruction),
                     0b100000 => self.add(instruction),
                     0b100001 => self.addu(instruction),
+                    0b100010 => self.sub(instruction),
                     0b100011 => self.subu(instruction),
                     0b100100 => self.and(instruction),
                     0b100101 => self.or(instruction),
@@ -102,7 +105,10 @@ impl CPU {
                     0b100111 => self.nor(instruction),
                     0b101010 => self.slt(instruction),
                     0b101011 => self.sltu(instruction),
-                    _ => panic!("{:08X} Unsupported funct: {:06b}..{:06b}", instruction, op, funct),
+                    _ => {
+                        println!("Illegal instruction: {:08X}", instruction);
+                        self.raise_exception(Cause::RI);
+                    },
                 }
             },
             0b000001 => self.bxx(instruction),
@@ -118,25 +124,36 @@ impl CPU {
             0b001011 => self.sltiu(instruction),
             0b001100 => self.andi(instruction),
             0b001101 => self.ori(instruction),
+            0b001110 => self.xori(instruction),
             0b001111 => self.lui(instruction),
-            0b010000 => {
-                let cop_instruction = instruction.rs();
-                match cop_instruction {
-                    0b00000 => self.mfc0(instruction),
-                    0b00100 => self.mtc0(instruction),
-                    0b10000 => self.system_control.rfe(),
-                    _ => panic!("{:08X} Unsupported cop0 op: {:06b}..{:05b}", instruction, op, cop_instruction)
-                }
-            }
+            0b010000 => self.cop0(instruction),
+            0b010001 => self.raise_exception(Cause::CpU),
+            0b010010 => self.cop2(instruction),
+            0b010011 => self.raise_exception(Cause::CpU),
             0b100000 => self.lb(instruction),
             0b100001 => self.lh(instruction),
+            0b100010 => self.lwl(instruction),
             0b100011 => self.lw(instruction),
             0b100100 => self.lbu(instruction),
             0b100101 => self.lhu(instruction),
+            0b100110 => self.lwr(instruction),
             0b101000 => self.sb(instruction),
             0b101001 => self.sh(instruction),
+            0b101010 => self.swl(instruction),
             0b101011 => self.sw(instruction),
-            _ => panic!("{:08X} Unsupported op: {:06b}", instruction, op),
+            0b101110 => self.swr(instruction),
+            0b110000 => self.raise_exception(Cause::CpU),
+            0b110001 => self.raise_exception(Cause::CpU),
+            0b110010 => self.lwc2(instruction),
+            0b110011 => self.raise_exception(Cause::CpU),
+            0b111000 => self.raise_exception(Cause::CpU),
+            0b111001 => self.raise_exception(Cause::CpU),
+            0b111010 => self.swc2(instruction),
+            0b111011 => self.raise_exception(Cause::CpU),
+            _ => {
+                println!("Illegal instruction: {:08X}", instruction);
+                self.raise_exception(Cause::RI);
+            },
         }
     }
 

@@ -1,3 +1,5 @@
+use std::hint::unreachable_unchecked;
+
 use crate::cpu::{decoder::{Cause, Instruction}, CPU};
 
 impl CPU {
@@ -24,6 +26,31 @@ impl CPU {
         }
 
         let value = self.read16(addr) as i16 as u32;
+        self.schedule_write(rt, value);
+    }
+
+    pub fn lwl(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let offset = instruction.imm_se();
+
+        let addr = self.R[rs].wrapping_add(offset);
+        let mut current_value = self.R[rt];
+        
+        if let Some((r, v)) = self.pending_writes[0] {
+            if r == rt {current_value = v}
+        }
+
+        let aligned_word = self.read32(addr & !0b11);
+
+        let value = match addr & 3 {
+            0 => (current_value & 0x00FF_FFFF) | (aligned_word << 24),
+            1 => (current_value & 0x0000_FFFF) | (aligned_word << 16),
+            2 => (current_value & 0x0000_00FF) | (aligned_word <<  8),
+            3 => (current_value & 0x0000_0000) | (aligned_word <<  0),
+            _ => unsafe { unreachable_unchecked() }
+        };
+
         self.schedule_write(rt, value);
     }
 
@@ -68,6 +95,31 @@ impl CPU {
         self.schedule_write(rt, value);
     }
 
+    pub fn lwr(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let offset = instruction.imm_se();
+
+        let addr = self.R[rs].wrapping_add(offset);
+        let mut current_value = self.R[rt];
+        
+        if let Some((r, v)) = self.pending_writes[0] {
+            if r == rt {current_value = v}
+        }
+
+        let aligned_word = self.read32(addr & !0b11);
+
+        let value = match addr & 3 {
+            0 => (current_value & 0x0000_0000) | (aligned_word >>  0),
+            1 => (current_value & 0xFF00_0000) | (aligned_word >>  8),
+            2 => (current_value & 0xFFFF_0000) | (aligned_word >> 16),
+            3 => (current_value & 0xFFFF_FF00) | (aligned_word >> 24),
+            _ => unsafe { unreachable_unchecked() }
+        };
+
+        self.schedule_write(rt, value);
+    }
+
     pub fn sb(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -94,6 +146,28 @@ impl CPU {
         self.write16(addr, value);
     }
 
+    pub fn swl(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let offset = instruction.imm_se();
+
+        let addr = self.R[rs].wrapping_add(offset);
+        let value = self.R[rt];
+
+        let aligned_addr = addr & !0b11;
+        let current_mem = self.read32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (current_mem & 0xFFFF_FF00) | (value >> 24),
+            1 => (current_mem & 0xFFFF_0000) | (value >> 16),
+            2 => (current_mem & 0xFF00_0000) | (value >>  8),
+            3 => (current_mem & 0x0000_0000) | (value >>  0),
+            _ => unsafe { unreachable_unchecked() }
+        };
+
+        self.write32(aligned_addr, mem);
+    }
+
     pub fn sw(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
@@ -107,5 +181,27 @@ impl CPU {
 
         let value = self.R[rt];
         self.write32(addr, value);
+    }
+
+    pub fn swr(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let offset = instruction.imm_se();
+
+        let addr = self.R[rs].wrapping_add(offset);
+        let value = self.R[rt];
+
+        let aligned_addr = addr & !0b11;
+        let current_mem = self.read32(aligned_addr);
+
+        let mem = match addr & 3 {
+            0 => (current_mem & 0x0000_0000) | (value <<  0),
+            1 => (current_mem & 0x0000_00FF) | (value <<  8),
+            2 => (current_mem & 0x0000_FFFF) | (value << 16),
+            3 => (current_mem & 0x00FF_FFFF) | (value << 24),
+            _ => unsafe { unreachable_unchecked() }
+        };
+
+        self.write32(aligned_addr, mem);
     }
 }

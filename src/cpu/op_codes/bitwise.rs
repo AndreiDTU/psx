@@ -110,4 +110,14 @@ impl CPU {
 
         self.write_register(rt, value);
     }
+
+    pub fn xori(&mut self, instruction: u32) {
+        let rs = instruction.rs();
+        let rt = instruction.rt();
+        let imm = instruction.imm();
+
+        let value = self.R[rs] ^ imm;
+
+        self.write_register(rt, value);
+    }
 }
