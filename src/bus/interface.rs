@@ -1,6 +1,6 @@
-use std::path::Path;
+use std::{cell::RefCell, path::Path, rc::Weak};
 
-use crate::{bios::BIOS, ram::RAM};
+use crate::{bios::BIOS, bus::dma::DMA, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -15,6 +15,9 @@ const BIOS_END: u32 = BIOS_START + (512 * 1024);
 const IO_START: u32 = 0x1F801000;
 const IO_END: u32 = IO_START + (4 * 1024);
 
+const DMA_START: u32 = 0x1F801080;
+const DMA_END: u32 = DMA_START + 0x80;
+
 const GPU_START: u32 = 0x1F801810;
 const GPU_END: u32 = GPU_START + 8;
 
@@ -26,6 +29,7 @@ const CACHE_CONTROL_END: u32 = CACHE_CONTROL + 4;
 
 pub struct Interface {
     bios: BIOS,
+    pub(crate) dma: Weak<RefCell<DMA>>,
     dram: RAM,
 }
 
@@ -34,7 +38,7 @@ impl Interface {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
 
-        Ok(Self { bios, dram })
+        Ok(Self { bios, dma: Weak::new(), dram })
     }
 
     pub fn read32(&self, addr: u32) -> u32 {
@@ -44,10 +48,11 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
+            DMA_START..DMA_END => self.dma.upgrade().unwrap().borrow().read_register(addr - DMA_START),
             GPU_START..GPU_END => {
                 let offset = addr - GPU_START;
                 match offset {
-                    4 => 0x1000_0000,
+                    4 => 0x1C00_0000,
                     _ => 0,
                 }
             }
@@ -83,6 +88,7 @@ impl Interface {
         let addr = mask_region(addr);
         match addr {
             DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
+            DMA_START..DMA_END => self.dma.upgrade().unwrap().borrow_mut().write_register(addr - DMA_START, value),
             IO_START..IO_END => {}
             CACHE_CONTROL..CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
             _ => panic!("Write access at unmapped address: {:08X}", addr),

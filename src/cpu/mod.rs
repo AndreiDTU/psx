@@ -1,6 +1,6 @@
-use std::{cell::RefCell, ops::{Index, IndexMut}, rc::Rc};
+use std::{cell::RefCell, rc::{Rc, Weak}};
 
-use crate::{bus::interface::Interface, cpu::{decoder::{Cause, Instruction}, system_control::SystemControl}};
+use crate::{bus::interface::Interface, cpu::{decoder::{Cause, Instruction}, system_control::SystemControl}, Registers};
 
 pub mod decoder;
 pub mod system_control;
@@ -21,6 +21,8 @@ pub struct CPU {
     system_control: SystemControl,
 
     interface: Rc<RefCell<Interface>>,
+    pub dma_running: Weak<RefCell<bool>>,
+    stalled: bool,
 
     trace: bool,
 }
@@ -46,12 +48,17 @@ impl CPU {
             system_control: SystemControl::new(),
 
             interface,
+            dma_running: Weak::new(),
+            stalled: false,
 
             trace: false
         }
     }
 
     pub fn tick(&mut self) {
+        self.stalled &= *self.dma_running.upgrade().unwrap().borrow();
+        if self.stalled {return}
+
         let instruction = self.read32(self.pc);
 
         self.delay_slot = self.branch;
@@ -158,7 +165,7 @@ impl CPU {
     }
 
     fn raise_exception(&mut self, cause: Cause) {
-        println!("Raised exception on cause: {:#?}", cause);
+        // println!("Raised exception on cause: {:#?}", cause);
 
         self.pc = if self.system_control.raise_exception(cause as u32, self.current_pc, self.delay_slot) {
             0xBFC0_0180
@@ -169,15 +176,18 @@ impl CPU {
         self.next_pc = self.pc.wrapping_add(4);
     }
 
-    fn read32(&self, addr: u32) -> u32 {
+    fn read32(&mut self, addr: u32) -> u32 {
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
         self.interface.borrow().read32(addr)
     }
 
-    fn read16(&self, addr: u32) -> u16 {
-        self.interface.borrow_mut().read16(addr)
+    fn read16(&mut self, addr: u32) -> u16 {
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.interface.borrow().read16(addr)
     }
 
-    fn read8(&self, addr: u32) -> u8 {
+    fn read8(&mut self, addr: u32) -> u8 {
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
         self.interface.borrow().read8(addr)
     }
 
@@ -186,6 +196,7 @@ impl CPU {
             println!("Cache not implemented");
             return;
         }
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
 
         self.interface.borrow_mut().write32(addr, value);
     }
@@ -195,6 +206,8 @@ impl CPU {
             println!("Cache not implemented");
             return;
         }
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+
         self.interface.borrow_mut().write16(addr, value);
     }
 
@@ -203,6 +216,8 @@ impl CPU {
             println!("Cache not implemented");
             return;
         }
+        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+
         self.interface.borrow_mut().write8(addr, value);
     }
 
@@ -222,24 +237,5 @@ impl CPU {
         if let Some((register, value)) = pending_write {
             self.write_register(register, value);
         }
-    }
-}
-
-#[derive(Debug)]
-struct Registers<const N: usize> {
-    R: [u32; N],
-}
-
-impl<const N: usize> Index<u32> for Registers<N> {
-    type Output = u32;
-
-    fn index(&self, index: u32) -> &Self::Output {
-        &self.R[index as usize]
-    }
-}
-
-impl<const N: usize> IndexMut<u32> for Registers<N> {
-    fn index_mut(&mut self, index: u32) -> &mut Self::Output {
-        &mut self.R[index as usize]
     }
 }
