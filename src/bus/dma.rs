@@ -77,7 +77,7 @@ impl DMA {
     }
 
     pub fn write_register(&mut self, offset: u32, value: u32) {
-        println!("DMA[{:02X}] <- {:08X}", offset, value);
+        // println!("DMA[{:02X}] <- {:08X}", offset, value);
         match offset {
             0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60 => {
                 self.channels[offset] = value & 0x00FF_FFFF
@@ -112,24 +112,32 @@ impl DMA {
         let addr = unsafe { self.current_addr[channel].unwrap_unchecked() };
 
         if self.remaining_size[channel] == 0 {
-            self.remaining_size[channel] = self.channels.word_num(index);
-            println!("Remaining size: {}", self.remaining_size[channel]);
+            self.remaining_size[channel] = match self.channels.sync_type(index) {
+                0 => self.channels.word_num(index),
+                1 => if self.channels.block_amount(index) > 0 {self.channels.block_size(index)} else {0},
+                _ => panic!("Unknown block sync mode"),
+            }
+            // println!("Remaining size: {}", self.remaining_size[channel]);
         }
         let mut remaining_size = self.remaining_size[channel];
 
         if remaining_size > 0 {
             if self.channels.transfer_direction(index) {
-                panic!("Transfer to device not implemented");
+                let value = match channel {
+                    2 => self.interface.borrow_mut().read32(addr & 0x001F_FFFC),
+                    _ => panic!("Unhandled DMA channel {channel} RAM -> Device"),
+                };
+                self.interface.borrow_mut().write32(addr & 0x001F_FFFC, value);
             } else {
                 let value = match channel {
                     6 => match remaining_size {
                         1 => 0x00FF_FFFF,
                         _ => addr.wrapping_sub(4) & 0x001F_FFFF,
                     }
-                    _ => panic!("Unhandled DMA channel {channel}"),
+                    _ => panic!("Unhandled DMA channel {channel} Device -> RAM"),
                 };
 
-               println!("DMA: [{:08X}] <- [{:08X}]", addr, value);
+                // println!("DMA: [{:08X}] <- [{:08X}]", addr, value);
                 self.interface.borrow_mut().write32(addr & 0x001F_FFFC, value);
             }
 
@@ -156,7 +164,7 @@ impl DMA {
             if self.current_addr[channel] == None {
                 let first_header_addr = self.channels.base_address(index);
                 self.current_addr[channel] = Some(first_header_addr);
-                println!("base: {:08X}", first_header_addr);
+                // println!("base: {:08X}", first_header_addr);
                 self.header = self.interface.borrow_mut().read32(first_header_addr);
             }
 
@@ -176,13 +184,12 @@ impl DMA {
             if self.header & 0x0080_0000 != 0 {
                 self.current_addr[channel] = None;
                 self.channels.done(index);
-                println!("END OF LIST!");
                 self.running.replace(false);
                 return;
             }
             addr = self.header & 0x00FF_FFFF;
             self.header = self.interface.borrow_mut().read32(addr);
-            println!("Header: {:08X} addr: {:08X}", self.header, addr);
+            // println!("Header: {:08X} addr: {:08X}", self.header, addr);
         }
 
         self.current_addr[channel] = Some(addr);
@@ -200,6 +207,11 @@ impl Channels {
 
         let bit = ((channel + 1) * 4) - 1;
         self.channels[7][0] &= !((1 << bit));
+        if self.sync_type(index) == 1 {
+            let blocks = self.block_amount(index).saturating_sub(1) as u32;
+            let block_control = &mut self.channels[channel as usize][1];
+            *block_control = (*block_control & 0x0000_FFFF) | (blocks << 16)
+        }
     }
 
     pub fn enabled(&self, index: u32) -> bool {
