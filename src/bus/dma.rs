@@ -1,4 +1,4 @@
-use std::{cell::RefCell, ops::{Index, IndexMut, Neg}, rc::Rc};
+use std::{cell::RefCell, ops::{Index, IndexMut}, rc::Rc};
 
 use crate::{bus::interface::Interface, Registers};
 
@@ -8,6 +8,7 @@ pub struct DMA {
     channels: Channels,
     remaining_size: [u16; 7],
     current_addr: [Option<u32>; 7],
+    header: u32,
 
     interface: Rc<RefCell<Interface>>,
 
@@ -23,6 +24,7 @@ impl DMA {
             channels,
             remaining_size: [0; 7],
             current_addr: [None; 7],
+            header: 0x00FF_FFFF,
 
             interface,
             
@@ -42,7 +44,10 @@ impl DMA {
             match channel >> 4 {
                 0 => panic!("MDEC-IN not implemented."),
                 1 => panic!("MDEC-OUT not implemented."),
-                2 => panic!("GPU not implemented."),
+                2 => match self.channels.sync_type(channel) {
+                    2 => self.linked_list_transfer(channel),
+                    _ => self.block_transfer(channel),
+                }
                 3 => panic!("CDROM not implemented."),
                 4 => panic!("SPU not implemented."),
                 5 => panic!("PIO not implemented."),
@@ -67,11 +72,12 @@ impl DMA {
     }
 
     pub fn read_register(&self, offset: u32) -> u32 {
+        // println!("DMA[{:02X}] = {:08X}", offset, self.channels[offset]);
         self.channels[offset]
     }
 
     pub fn write_register(&mut self, offset: u32, value: u32) {
-        println!("Writing: {:08X}", value);
+        println!("DMA[{:02X}] <- {:08X}", offset, value);
         match offset {
             0x00 | 0x10 | 0x20 | 0x30 | 0x40 | 0x50 | 0x60 => {
                 self.channels[offset] = value & 0x00FF_FFFF
@@ -105,7 +111,10 @@ impl DMA {
         self.current_addr[channel] = Some(self.current_addr[channel].unwrap_or_else(|| self.channels.base_address(index)));
         let addr = unsafe { self.current_addr[channel].unwrap_unchecked() };
 
-        if self.remaining_size[channel] == 0 {self.remaining_size[channel] = self.channels.word_num(0x60)}
+        if self.remaining_size[channel] == 0 {
+            self.remaining_size[channel] = self.channels.word_num(index);
+            println!("Remaining size: {}", self.remaining_size[channel]);
+        }
         let mut remaining_size = self.remaining_size[channel];
 
         if remaining_size > 0 {
@@ -114,13 +123,13 @@ impl DMA {
             } else {
                 let value = match channel {
                     6 => match remaining_size {
-                        1 => 0xFFFF_FFFF,
-                        _ => self.channels.base_address(index).wrapping_sub(4) & 0x001F_FFFF,
+                        1 => 0x00FF_FFFF,
+                        _ => addr.wrapping_sub(4) & 0x001F_FFFF,
                     }
                     _ => panic!("Unhandled DMA channel {channel}"),
                 };
 
-                println!("DMA: [{:08X}] <- [{:08X}]", addr, value);
+               println!("DMA: [{:08X}] <- [{:08X}]", addr, value);
                 self.interface.borrow_mut().write32(addr & 0x001F_FFFC, value);
             }
 
@@ -134,6 +143,49 @@ impl DMA {
                 self.current_addr[channel] = Some(addr.wrapping_add(increment));
             }
         }
+    }
+
+    fn linked_list_transfer(&mut self, index: u32) {
+        if !self.channels.transfer_direction(index) {panic!("Linked list mode cannot transfer to RAM")}
+
+        let channel = (index >> 4) as usize;
+        if channel != 2 {panic!("Attempting linked-list DMA on non-GPU channel: {}", channel)}
+
+        let mut remaining_size = self.remaining_size[channel];
+        if self.remaining_size[channel] == 0 {
+            if self.current_addr[channel] == None {
+                let first_header_addr = self.channels.base_address(index);
+                self.current_addr[channel] = Some(first_header_addr);
+                println!("base: {:08X}", first_header_addr);
+                self.header = self.interface.borrow_mut().read32(first_header_addr);
+            }
+
+            remaining_size = (self.header >> 24) as u16;
+            self.remaining_size[channel] = remaining_size;
+        }
+        let mut addr = (self.current_addr[channel].unwrap() + 4) & 0x001F_FFFC;
+
+        if remaining_size > 0 {
+            let command = self.interface.borrow_mut().read32(addr);
+            self.interface.borrow_mut().write32(0x1F801810, command);
+        }
+
+        remaining_size = remaining_size.saturating_sub(1);
+        self.remaining_size[channel] = remaining_size;
+        if remaining_size == 0 {
+            if self.header & 0x0080_0000 != 0 {
+                self.current_addr[channel] = None;
+                self.channels.done(index);
+                println!("END OF LIST!");
+                self.running.replace(false);
+                return;
+            }
+            addr = self.header & 0x00FF_FFFF;
+            self.header = self.interface.borrow_mut().read32(addr);
+            println!("Header: {:08X} addr: {:08X}", self.header, addr);
+        }
+
+        self.current_addr[channel] = Some(addr);
     }
 }
 
@@ -153,7 +205,7 @@ impl Channels {
     pub fn enabled(&self, index: u32) -> bool {
         let channel = index >> 4;
         let bit = ((channel + 1) * 4) - 1;
-        self.channels[7][0] & (1 << bit) != 0
+        self.channels[7][0] & (1 << bit) != 0 && self.start_transfer(index)
     }
 
     pub fn priority(&self, index: u32) -> u8 {
@@ -242,7 +294,7 @@ impl Index<u32> for Channels {
     fn index(&self, index: u32) -> &Self::Output {
         let channel = index >> 4;
         let register = (index & 0xF) >> 2;
-        println!("Reading DMA channel {channel}, register {register}");
+        // println!("Reading DMA channel {channel}, register {register}, index {:02X}", index);
         &self.channels[channel as usize][register]
     }
 }
@@ -251,7 +303,7 @@ impl IndexMut<u32> for Channels {
     fn index_mut(&mut self, index: u32) -> &mut Self::Output {
         let channel = index >> 4;
         let register = (index & 0xF) >> 2;
-        println!("Writing DMA channel {channel}, register {register}");
+        // println!("Writing DMA channel {channel}, register {register}, index {:02X}", index);
         &mut self.channels[channel as usize][register]
     }
 }

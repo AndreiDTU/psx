@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::{Rc, Weak}};
+use std::{cell::RefCell, rc::Rc};
 
 use crate::{bus::interface::Interface, cpu::{decoder::{Cause, Instruction}, system_control::SystemControl}, Registers};
 
@@ -7,13 +7,13 @@ pub mod system_control;
 mod op_codes;
 
 pub struct CPU {
-    R: Registers<32>,
-    pc: u32,
+    pub R: Registers<32>,
+    pub pc: u32,
     hi: u32,
     lo: u32,
 
     current_pc: u32,
-    next_pc: u32,
+    pub next_pc: u32,
     pending_writes: [Option<(u32, u32)>; 2],
     branch: bool,
     delay_slot: bool,
@@ -21,14 +21,14 @@ pub struct CPU {
     system_control: SystemControl,
 
     interface: Rc<RefCell<Interface>>,
-    pub dma_running: Weak<RefCell<bool>>,
+    pub dma_running: Rc<RefCell<bool>>,
     stalled: bool,
 
-    trace: bool,
+    pub trace: bool,
 }
 
 impl CPU {
-    pub fn new(interface: Rc<RefCell<Interface>>) -> Self {
+    pub fn new(interface: Rc<RefCell<Interface>>, dma_running: Rc<RefCell<bool>>) -> Self {
         let R = Registers {R: [0; 32]};
         let pc = 0xBFC0_0000;
         let (hi, lo) = (0, 0);
@@ -48,7 +48,7 @@ impl CPU {
             system_control: SystemControl::new(),
 
             interface,
-            dma_running: Weak::new(),
+            dma_running,
             stalled: false,
 
             trace: false
@@ -56,10 +56,14 @@ impl CPU {
     }
 
     pub fn tick(&mut self) {
-        self.stalled &= *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled &= *self.dma_running.borrow();
         if self.stalled {return}
 
         let instruction = self.read32(self.pc);
+        if self.stalled {
+            println!("Stalled!");
+            return
+        }
 
         self.delay_slot = self.branch;
         self.branch = false;
@@ -75,6 +79,7 @@ impl CPU {
 
         self.execute(instruction);
         self.commit_writes();
+        // self.check_for_tty_output();
     }
 
     pub fn execute(&mut self, instruction: u32) {
@@ -177,53 +182,56 @@ impl CPU {
     }
 
     fn read32(&mut self, addr: u32) -> u32 {
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
         self.interface.borrow().read32(addr)
     }
 
     fn read16(&mut self, addr: u32) -> u16 {
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
         self.interface.borrow().read16(addr)
     }
 
     fn read8(&mut self, addr: u32) -> u8 {
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
         self.interface.borrow().read8(addr)
     }
 
     fn write32(&mut self, addr: u32, value: u32) {
         if self.system_control.read_register(12) & 0x10000 != 0 {
-            println!("Cache not implemented");
+            // println!("Cache not implemented");
             return;
         }
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
 
         self.interface.borrow_mut().write32(addr, value);
     }
 
     fn write16(&mut self, addr: u32, value: u16) {
         if self.system_control.read_register(12) & 0x10000 != 0 {
-            println!("Cache not implemented");
+            // println!("Cache not implemented");
             return;
         }
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
 
         self.interface.borrow_mut().write16(addr, value);
     }
 
     fn write8(&mut self, addr: u32, value: u8) {
         if self.system_control.read_register(12) & 0x10000 != 0 {
-            println!("Cache not implemented");
+            // println!("Cache not implemented");
             return;
         }
-        self.stalled = *self.dma_running.upgrade().unwrap().borrow();
+        self.stalled = *self.dma_running.borrow();
 
         self.interface.borrow_mut().write8(addr, value);
     }
 
     fn write_register(&mut self, register: u32, value: u32) {
-        self.R[register] = value;
-        self.R[0] = 0;
+        if let Some((register, value)) = self.pending_writes[0] {
+            self.R[register] = value;
+            self.R[0] = 0;
+        }
+        self.pending_writes[0] = Some((register, value));
     }
 
     fn schedule_write(&mut self, register: u32, value: u32) {
@@ -232,10 +240,19 @@ impl CPU {
 
     fn commit_writes(&mut self) {
         let pending_write = self.pending_writes[0];
+        if let Some((register, value)) = pending_write {
+            self.R[register] = value;
+            self.R[0] = 0;
+        }
         self.pending_writes[0] = self.pending_writes[1];
         self.pending_writes[1] = None;
-        if let Some((register, value)) = pending_write {
-            self.write_register(register, value);
+    }
+
+    fn check_for_tty_output(&self) {
+        let pc = self.pc & 0x1FFF_FFFF;
+        if (pc == 0xA0 && self.R[9] == 0x3C) || (pc == 0xB0 && self.R[9] == 0x3D) {
+            let ch = self.R[4] as u8 as char;
+            print!("{ch}");
         }
     }
 }

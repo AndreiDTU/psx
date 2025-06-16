@@ -30,7 +30,7 @@ const CACHE_CONTROL_END: u32 = CACHE_CONTROL + 4;
 pub struct Interface {
     bios: BIOS,
     pub(crate) dma: Weak<RefCell<DMA>>,
-    dram: RAM,
+    pub dram: RAM,
 }
 
 impl Interface {
@@ -89,8 +89,18 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
             DMA_START..DMA_END => self.dma.upgrade().unwrap().borrow_mut().write_register(addr - DMA_START, value),
+            GPU_START..GPU_END => {
+                let offset = addr - GPU_START;
+                match offset {
+                    0 => println!("GP0: {:08X}", value),
+                    4 => println!("GP1: {:08X}", value),
+                    _ => unreachable!(),
+                }
+            }
             IO_START..IO_END => {}
-            CACHE_CONTROL..CACHE_CONTROL_END => {println!("Write to CACHE_CONTROL")}
+            CACHE_CONTROL..CACHE_CONTROL_END => {
+                // println!("Write to CACHE_CONTROL")
+            }
             _ => panic!("Write access at unmapped address: {:08X}", addr),
         }
     }

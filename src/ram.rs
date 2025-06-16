@@ -1,5 +1,6 @@
+#[derive(Debug)]
 pub struct RAM {
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 impl RAM {

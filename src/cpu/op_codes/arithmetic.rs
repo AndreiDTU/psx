@@ -67,7 +67,6 @@ impl CPU {
         if let Some(value) = a.checked_add(b) {
             self.write_register(rd, value as u32);
         } else {
-            println!("Add overflow!");
             self.raise_exception(Cause::Ovf);
         }
     }

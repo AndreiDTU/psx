@@ -120,7 +120,7 @@ impl CPU {
         let target = instruction.target();
 
         self.branch = true;
-        self.next_pc = (self.next_pc & 0xF000_0000) | (target << 2);
+        self.next_pc = (self.pc & 0xF000_0000) | (target << 2);
     }
 
     pub fn jal(&mut self, instruction: u32) {

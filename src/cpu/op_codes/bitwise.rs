@@ -24,7 +24,7 @@ impl CPU {
         let rd = instruction.rd();
         let shamt = instruction.shamt();
 
-        let value = (self.R[rt] as i32) >> shamt;
+        let value = (self.R[rt] as i32) >> shamt as i32;
         self.write_register(rd, value as u32);
     }
 
@@ -51,7 +51,7 @@ impl CPU {
         let rt = instruction.rt();
         let rd = instruction.rd();
 
-        let value = (self.R[rt] as i32) >> (self.R[rs] & 0x1F);
+        let value = (self.R[rt] as i32) >> (self.R[rs] & 0x1F) as i32;
         self.write_register(rd, value as u32);
     }
 
