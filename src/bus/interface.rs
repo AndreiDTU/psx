@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::Weak};
 
-use crate::{bios::BIOS, bus::dma::DMA, ram::RAM};
+use crate::{bios::BIOS, bus::dma::DMA, gpu::GPU, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -31,14 +31,16 @@ pub struct Interface {
     bios: BIOS,
     pub(crate) dma: Weak<RefCell<DMA>>,
     pub dram: RAM,
+    pub gpu: GPU,
 }
 
 impl Interface {
     pub fn new(path: &Path) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
+        let gpu = GPU::new();
 
-        Ok(Self { bios, dma: Weak::new(), dram })
+        Ok(Self { bios, dma: Weak::new(), dram, gpu })
     }
 
     pub fn read32(&self, addr: u32) -> u32 {
@@ -52,8 +54,9 @@ impl Interface {
             GPU_START..GPU_END => {
                 let offset = addr - GPU_START;
                 match offset {
-                    4 => 0x1C00_0000,
-                    _ => 0,
+                    0 => self.gpu.read_gp0(),
+                    4 => self.gpu.read_gp1(),
+                    _ => unreachable!(),
                 }
             }
             IO_START..IO_END => 0,
@@ -92,8 +95,8 @@ impl Interface {
             GPU_START..GPU_END => {
                 let offset = addr - GPU_START;
                 match offset {
-                    0 => println!("GP0: {:08X}", value),
-                    4 => println!("GP1: {:08X}", value),
+                    0 => self.gpu.write_gp0(value),
+                    4 => self.gpu.write_gp1(value),
                     _ => unreachable!(),
                 }
             }

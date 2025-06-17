@@ -248,6 +248,7 @@ impl CPU {
         self.pending_writes[1] = None;
     }
 
+    #[allow(unused)]
     fn check_for_tty_output(&self) {
         let pc = self.pc & 0x1FFF_FFFF;
         if (pc == 0xA0 && self.R[9] == 0x3C) || (pc == 0xB0 && self.R[9] == 0x3D) {

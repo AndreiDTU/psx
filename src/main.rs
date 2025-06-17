@@ -7,6 +7,7 @@ use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU};
 pub mod bus;
 pub mod bios;
 pub mod cpu;
+pub mod gpu;
 pub mod ram;
 
 fn main() -> Result<(), anyhow::Error> {
@@ -23,9 +24,11 @@ fn main() -> Result<(), anyhow::Error> {
         // sideload_exe(&mut cpu, interface.clone(), exe);
         cpu.tick();
         dma.borrow_mut().tick();
+        interface.borrow_mut().gpu.tick();
     }
 }
 
+#[allow(unused)]
 fn sideload_exe(cpu: &mut CPU, interface: Rc<RefCell<Interface>>, exe: &[u8]) {
     if cpu.pc != 0x80030000 {return}
 
