@@ -2,6 +2,10 @@ use std::collections::VecDeque;
 
 use modular_bitfield::{bitfield, prelude::*};
 
+use crate::ram::RAM;
+
+const VRAM_SIZE: usize = 1024 * 1024;
+
 #[bitfield]
 pub struct GPUSTAT {
     texture_page_x_base: B4,
@@ -31,7 +35,15 @@ pub struct GPUSTAT {
     drawing_even_odd_lines_in_interlace_mode: B1,
 }
 
+#[derive(PartialEq)]
+enum GP0_Mode {
+    Command,
+    ImageLoad
+}
+
 pub struct GPU {
+    vram: RAM,
+
     gpu_status: GPUSTAT,
     gpu_read: u32,
 
@@ -49,12 +61,17 @@ pub struct GPU {
     textured_rectangle_y_flip: bool,
 
     command_buffer: VecDeque<u32>,
-    parameters: Option<usize>,
+    remaining_words: Option<usize>,
+    blit_address: Option<u32>,
+
+    gp0_mode: GP0_Mode,
 }
 
 impl GPU {
     pub fn new() -> Self {
         Self {
+            vram: RAM::new(VRAM_SIZE),
+
             gpu_status: GPUSTAT::from_bytes(0x1C00_0000u32.to_le_bytes()),
             gpu_read: 0,
 
@@ -71,16 +88,22 @@ impl GPU {
             textured_rectangle_x_flip: false,
             textured_rectangle_y_flip: false,
 
-            command_buffer: VecDeque::with_capacity(16),
-            parameters: None,
+            command_buffer: VecDeque::with_capacity(1024),
+            remaining_words: None,
+            blit_address: None,
+
+            gp0_mode: GP0_Mode::Command,
         }
     }
 
     pub fn tick(&mut self) {
-        if let Some(parameter_count) = self.parameters {
-            if self.command_buffer.len() > parameter_count {
+        if let Some(remaining_words) = self.remaining_words {
+            if self.command_buffer.len() > remaining_words {
                 let command = self.command_buffer.pop_front().unwrap();
-                self.execute_gp0(command);
+                match self.gp0_mode {
+                    GP0_Mode::Command => self.execute_gp0(command),
+                    GP0_Mode::ImageLoad => self.vram_blit(),
+                }
             }
         }
     }
@@ -96,8 +119,11 @@ impl GPU {
     }
 
     pub fn write_gp0(&mut self, command: u32) {
-        println!("GP0: {:08X}", command);
-        self.set_params(command);
+        if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
+        match self.gp0_mode {
+            GP0_Mode::Command => self.set_params(command),
+            GP0_Mode::ImageLoad => self.command_buffer.push_back(command),
+        }
     }
 
     pub fn write_gp1(&mut self, command: u32) {
@@ -107,10 +133,12 @@ impl GPU {
 
     fn set_params(&mut self, command: u32) {
         let command_number = command >> 24;
-        if self.parameters == None {
+        if self.remaining_words == None {
             let parameter_count = match command_number {
                 0x00 => return,
+                0x01 => 0,
                 0x28 => 4,
+                0xA0 => 2,
                 0xE1 => 0,
                 0xE2 => 0,
                 0xE3 => 0,
@@ -120,7 +148,7 @@ impl GPU {
                 _ => panic!("Unsupported GPU command {:08X}", command)
             };
 
-            self.parameters = Some(parameter_count);
+            self.remaining_words = Some(parameter_count);
         }
 
         self.command_buffer.push_back(command);
@@ -130,7 +158,9 @@ impl GPU {
         let command_number = command >> 24;
         match command_number {
             0x00 => {}
+            0x01 => self.clear_cache(),
             0x28 => self.draw_monochrome_quad(command),
+            0xA0 => self.begin_image_load(),
             0xE1 => self.draw_mode_setting(command),
             0xE2 => self.texture_window_setting(command),
             0xE3 => self.drawing_area_top_left(command),
@@ -139,7 +169,28 @@ impl GPU {
             0xE6 => self.mask_bit_setting(command),
             _ => panic!("Unsupported GPU command {:08X}", command)
         }
-        self.parameters = None;
+        self.command_buffer.clear();
+    }
+
+    fn vram_blit(&mut self) {
+        let mut address = self.blit_address.unwrap();
+        self.command_buffer.iter()
+            .for_each(|word| {
+                println!("VRAM[{:08X}] <- {:08X}", address, *word);
+                self.vram.write32(address, *word);
+                address += 1;
+                address &= 0x000F_FFFF;
+            });
+        
+        self.blit_address = None;
+        self.command_buffer.clear();
+        self.remaining_words = None;
+        self.gp0_mode = GP0_Mode::Command;
+    }
+
+    fn clear_cache(&mut self) {
+        println!("Texture cache not yet implemented.");
+        self.remaining_words = None;
     }
 
     fn draw_monochrome_quad(&mut self, command: u32) {
@@ -159,7 +210,27 @@ impl GPU {
             points.get(2).unwrap().0, points.get(2).unwrap().1,
             points.get(3).unwrap().0, points.get(3).unwrap().1,
             color
-        )
+        );
+        
+        self.remaining_words = None;
+    }
+
+    fn begin_image_load(&mut self) {
+        let dest_coord = self.command_buffer.pop_front().unwrap();
+        let resolution = self.command_buffer.pop_front().unwrap();
+
+        let width = resolution & 0xFFFF;
+        let height = resolution >> 16;
+
+        let data_size = ((width * height) + 1) & !1;
+        self.remaining_words = Some((data_size >> 1) as usize - 1);
+
+        let x_pos = dest_coord & 0x03FF;
+        let y_pos = (dest_coord >> 16) & 0x01FF;
+
+        self.blit_address = Some((y_pos << 10) | x_pos);
+
+        self.gp0_mode = GP0_Mode::ImageLoad
     }
 
     fn draw_mode_setting(&mut self, command: u32) {
@@ -172,6 +243,8 @@ impl GPU {
         self.gpu_status.set_texture_page_y_base_2(((command >> 11) & 1) as u8);
         self.textured_rectangle_x_flip = ((command >> 12) & 1) != 0;
         self.textured_rectangle_y_flip = ((command >> 13) & 1) != 0;
+        
+        self.remaining_words = None;
     }
 
     fn texture_window_setting(&mut self, command: u32) {
@@ -179,26 +252,36 @@ impl GPU {
         self.texture_window_mask_y = (command >> 5) & 0x1F;
         self.texture_window_offset_x = (command >> 10) & 0x1F;
         self.texture_window_offset_y = (command >> 15) & 0x1F;
+        
+        self.remaining_words = None;
     }
 
     fn drawing_area_top_left(&mut self, command: u32) {
         self.x1 = command & 0x0000_03FF;
         self.y1 = (command >> 10) & 0x0000_01FF;
+        
+        self.remaining_words = None;
     }
 
     fn drawing_area_bottom_right(&mut self, command: u32) {
         self.x2 = command & 0x0000_03FF;
         self.y2 = (command >> 10) & 0x0000_01FF;
+        
+        self.remaining_words = None;
     }
 
     fn drawing_offset(&mut self, command: u32) {
         self.x_offset = command & 0x0000_07FF;
         self.y_offset = (command >> 11) & 0x0000_07FF;
+        
+        self.remaining_words = None;
     }
 
     fn mask_bit_setting(&mut self, command: u32) {
         self.gpu_status.set_set_mask_bit((command & 1) as u8);
         self.gpu_status.set_check_mask(((command >> 1) & 1) as u8);
+        
+        self.remaining_words = None;
     }
 
     fn execute_gp1(&mut self, command: u32) {
@@ -227,6 +310,12 @@ impl GPU {
         self.set_horizontal_display_range(0);
         self.set_vertical_display_range(0);
         self.set_display_mode(0);
+        self.draw_mode_setting(0);
+        self.texture_window_setting(0);
+        self.drawing_area_top_left(0);
+        self.drawing_area_bottom_right(0);
+        self.drawing_offset(0);
+        self.mask_bit_setting(0);
     }
 
     fn reset_command_buffer(&mut self) {

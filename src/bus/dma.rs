@@ -114,7 +114,7 @@ impl DMA {
         if self.remaining_size[channel] == 0 {
             self.remaining_size[channel] = match self.channels.sync_type(index) {
                 0 => self.channels.word_num(index),
-                1 => if self.channels.block_amount(index) > 0 {self.channels.block_size(index)} else {0},
+                1 => self.channels.block_amount(index) * self.channels.block_size(index),
                 _ => panic!("Unknown block sync mode"),
             }
             // println!("Remaining size: {}", self.remaining_size[channel]);
@@ -123,11 +123,13 @@ impl DMA {
 
         if remaining_size > 0 {
             if self.channels.transfer_direction(index) {
-                let value = match channel {
-                    2 => self.interface.borrow_mut().read32(addr & 0x001F_FFFC),
+                match channel {
+                    2 => {
+                        let value = self.interface.borrow_mut().read32(addr & 0x001F_FFFC);
+                        self.interface.borrow_mut().write32(0x1F80_1810, value);
+                    }
                     _ => panic!("Unhandled DMA channel {channel} RAM -> Device"),
                 };
-                self.interface.borrow_mut().write32(addr & 0x001F_FFFC, value);
             } else {
                 let value = match channel {
                     6 => match remaining_size {
@@ -175,7 +177,7 @@ impl DMA {
 
         if remaining_size > 0 {
             let command = self.interface.borrow_mut().read32(addr);
-            self.interface.borrow_mut().write32(0x1F801810, command);
+            self.interface.borrow_mut().write32(0x1F80_1810, command);
         }
 
         remaining_size = remaining_size.saturating_sub(1);
