@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, hint::unreachable_unchecked};
 
 use modular_bitfield::{bitfield, prelude::*};
 
@@ -38,7 +38,7 @@ pub struct GPUSTAT {
 #[derive(PartialEq)]
 enum GP0_Mode {
     Command,
-    ImageLoad
+    ImageLoad,
 }
 
 pub struct GPU {
@@ -63,6 +63,10 @@ pub struct GPU {
     command_buffer: VecDeque<u32>,
     remaining_words: Option<usize>,
     blit_address: Option<u32>,
+
+    cpu_blit: bool,
+    cpu_blit_address: Option<u32>,
+    cpu_blit_words: Option<usize>,
 
     gp0_mode: GP0_Mode,
 }
@@ -92,6 +96,10 @@ impl GPU {
             remaining_words: None,
             blit_address: None,
 
+            cpu_blit: false,
+            cpu_blit_address: None,
+            cpu_blit_words: None,
+
             gp0_mode: GP0_Mode::Command,
         }
     }
@@ -108,7 +116,18 @@ impl GPU {
         }
     }
 
-    pub fn read_gp0(&self) -> u32 {
+    pub fn read_gp0(&mut self) -> u32 {
+        if self.cpu_blit && self.cpu_blit_words.is_some() {
+            let addr = self.cpu_blit_address.unwrap();
+            self.gpu_read = self.vram.read32(addr);
+            self.cpu_blit_address = Some((addr + 1) & 0x000F_FFFF);
+            self.cpu_blit_words = Some(self.cpu_blit_words.unwrap() - 1);
+            if self.cpu_blit_words == Some(0) {
+                self.cpu_blit_words = None;
+                self.cpu_blit = false;
+            }
+        }
+
         println!("GPUREAD = {:08X}", self.gpu_read);
         self.gpu_read
     }
@@ -121,7 +140,7 @@ impl GPU {
     pub fn write_gp0(&mut self, command: u32) {
         if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
         match self.gp0_mode {
-            GP0_Mode::Command => self.set_params(command),
+            GP0_Mode::Command => self.set_remaining_words(command),
             GP0_Mode::ImageLoad => self.command_buffer.push_back(command),
         }
     }
@@ -131,14 +150,19 @@ impl GPU {
         self.execute_gp1(command);
     }
 
-    fn set_params(&mut self, command: u32) {
+    fn set_remaining_words(&mut self, command: u32) {
         let command_number = command >> 24;
         if self.remaining_words == None {
             let parameter_count = match command_number {
                 0x00 => return,
                 0x01 => 0,
                 0x28 => 4,
+                0x2C => 8,
+                0x30 => 5,
+                0x38 => 7,
+                0x3C => 11,
                 0xA0 => 2,
+                0xC0 => 3,
                 0xE1 => 0,
                 0xE2 => 0,
                 0xE3 => 0,
@@ -160,7 +184,12 @@ impl GPU {
             0x00 => {}
             0x01 => self.clear_cache(),
             0x28 => self.draw_monochrome_quad(command),
+            0x2C => self.draw_textured_blended_quad(command),
+            0x30 => self.draw_gouraud_tri(command),
+            0x38 => self.draw_gouraud_quad(command),
+            0x3C => self.draw_textured_gouraud_quad(command),
             0xA0 => self.begin_image_load(),
+            0xC0 => self.begin_image_store(),
             0xE1 => self.draw_mode_setting(command),
             0xE2 => self.texture_window_setting(command),
             0xE3 => self.drawing_area_top_left(command),
@@ -176,7 +205,7 @@ impl GPU {
         let mut address = self.blit_address.unwrap();
         self.command_buffer.iter()
             .for_each(|word| {
-                println!("VRAM[{:08X}] <- {:08X}", address, *word);
+                // println!("VRAM[{:08X}] <- {:08X}", address, *word);
                 self.vram.write32(address, *word);
                 address += 1;
                 address &= 0x000F_FFFF;
@@ -204,12 +233,147 @@ impl GPU {
         let color = command & 0x00FF_FFFF;
 
         println!(
-            "Quad: ({}, {}) ({}, {}) ({}, {}) ({}, {}) RGB24: {:06X}",
+            "Monochrome Quad: ({}, {}) ({}, {}) ({}, {}) ({}, {}) RGB24: {:06X}",
             points.get(0).unwrap().0, points.get(0).unwrap().1,
             points.get(1).unwrap().0, points.get(1).unwrap().1,
             points.get(2).unwrap().0, points.get(2).unwrap().1,
             points.get(3).unwrap().0, points.get(3).unwrap().1,
             color
+        );
+        
+        self.remaining_words = None;
+    }
+
+    fn draw_textured_blended_quad(&mut self, command: u32) {
+        let color = command & 0x00FF_FFFF;
+        let mut points: Vec<(u32, u32)> = Vec::new();
+        let mut tex_coords: Vec<(u32, u32)> = Vec::new();
+        let mut CLUT = 0;
+        let mut page = 0;
+        
+        self.command_buffer
+            .drain(..)
+            .enumerate()
+            .for_each(|(i, w)| {
+                if i == 2 {
+                    CLUT = w >> 16;
+                } else if i == 4 {
+                    page = w >> 16;
+                }
+
+                if i & 1 == 0 {
+                    points.push((((w >> 16) & 0x0000_FFFF), w & 0x0000_FFFF));
+                } else {
+                    tex_coords.push((((w >> 8) & 0xF), w & 0xF));
+                }
+            });
+
+        println!(
+            "Textured Blended Quad: CLUT: {:04X} Page: {:04X} RGB24: {:06X}\n
+            ({}, {}) UV ({}, {})\n
+            ({}, {}) UV ({}, {})\n
+            ({}, {}) UV ({}, {})\n
+            ({}, {}) UV ({}, {})\n",
+            CLUT, page, color,
+            points.get(0).unwrap().0, points.get(0).unwrap().1, tex_coords.get(0).unwrap().0, tex_coords.get(0).unwrap().1,
+            points.get(1).unwrap().0, points.get(1).unwrap().1, tex_coords.get(1).unwrap().0, tex_coords.get(1).unwrap().1,
+            points.get(2).unwrap().0, points.get(2).unwrap().1, tex_coords.get(2).unwrap().0, tex_coords.get(2).unwrap().1,
+            points.get(3).unwrap().0, points.get(3).unwrap().1, tex_coords.get(3).unwrap().0, tex_coords.get(3).unwrap().1,
+        );
+        
+        self.remaining_words = None;
+    }
+
+    fn draw_textured_gouraud_quad(&mut self, command: u32) {
+        let mut points: Vec<(u32, u32)> = Vec::new();
+        let mut colors: Vec<u32> = Vec::new();
+        let mut tex_coords: Vec<(u32, u32)> = Vec::new();
+        let mut CLUT = 0;
+        let mut page = 0;
+
+        self.command_buffer.push_front(command);
+        self.command_buffer
+            .drain(..)
+            .enumerate()
+            .for_each(|(i, w)| {
+                if i == 2 {
+                    CLUT = w >> 16;
+                } else if i == 5 {
+                    page = w >> 16;
+                }
+
+                match i % 3 {
+                    0 => colors.push(w & 0x00FF_FFFF),
+                    1 => points.push(((w >> 16), (w & 0x0000_FFFF))),
+                    2 => tex_coords.push((((w >> 8) & 0xF), w & 0xF)),
+                    _ => unsafe { unreachable_unchecked() }
+                }
+            });
+
+        println!(
+            "Textured Gouraud Quad: CLUT: {:04X} Page: {:04X}\n
+            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
+            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
+            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
+            ({}, {}) UV ({}, {}) RGB24: {:06X}\n",
+            CLUT, page,
+            points.get(0).unwrap().0, points.get(0).unwrap().1, tex_coords.get(0).unwrap().0, tex_coords.get(0).unwrap().1, colors.get(0).unwrap(),
+            points.get(1).unwrap().0, points.get(1).unwrap().1, tex_coords.get(1).unwrap().0, tex_coords.get(1).unwrap().1, colors.get(1).unwrap(),
+            points.get(2).unwrap().0, points.get(2).unwrap().1, tex_coords.get(2).unwrap().0, tex_coords.get(2).unwrap().1, colors.get(2).unwrap(),
+            points.get(3).unwrap().0, points.get(3).unwrap().1, tex_coords.get(3).unwrap().0, tex_coords.get(3).unwrap().1, colors.get(3).unwrap(),
+        );
+        
+        self.remaining_words = None;
+    }
+
+    fn draw_gouraud_tri(&mut self, command: u32) {
+        let mut points: Vec<(u32, u32)> = Vec::new();
+        let mut colors: Vec<u32> = Vec::new();
+
+        self.command_buffer.push_front(command);
+        self.command_buffer
+            .drain(..)
+            .enumerate()
+            .for_each(|(i, w)| {
+                if i & 1 != 0 {
+                    points.push(((w >> 16), (w & 0x0000_FFFF)));
+                } else {
+                    colors.push(w & 0x00FF_FFFF);
+                }
+            });
+
+        println!(
+            "Gouraud Tri: ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X}",
+            points.get(0).unwrap().0, points.get(0).unwrap().1, colors.get(0).unwrap(),
+            points.get(1).unwrap().0, points.get(1).unwrap().1, colors.get(1).unwrap(),
+            points.get(2).unwrap().0, points.get(2).unwrap().1, colors.get(2).unwrap(),
+        );
+        
+        self.remaining_words = None;
+    }
+
+    fn draw_gouraud_quad(&mut self, command: u32) {
+        let mut points: Vec<(u32, u32)> = Vec::new();
+        let mut colors: Vec<u32> = Vec::new();
+
+        self.command_buffer.push_front(command);
+        self.command_buffer
+            .drain(..)
+            .enumerate()
+            .for_each(|(i, w)| {
+                if i & 1 != 0 {
+                    points.push(((w >> 16), (w & 0x0000_FFFF)));
+                } else {
+                    colors.push(w & 0x00FF_FFFF);
+                }
+            });
+
+        println!(
+            "Gouraud Quad: ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X}",
+            points.get(0).unwrap().0, points.get(0).unwrap().1, colors.get(0).unwrap(),
+            points.get(1).unwrap().0, points.get(1).unwrap().1, colors.get(1).unwrap(),
+            points.get(2).unwrap().0, points.get(2).unwrap().1, colors.get(2).unwrap(),
+            points.get(3).unwrap().0, points.get(3).unwrap().1, colors.get(3).unwrap(),
         );
         
         self.remaining_words = None;
@@ -231,6 +395,24 @@ impl GPU {
         self.blit_address = Some((y_pos << 10) | x_pos);
 
         self.gp0_mode = GP0_Mode::ImageLoad
+    }
+
+    fn begin_image_store(&mut self) {
+        let dest_coord = self.command_buffer.pop_front().unwrap();
+        let resolution = self.command_buffer.pop_front().unwrap();
+
+        let width = resolution & 0xFFFF;
+        let height = resolution >> 16;
+
+        let data_size = ((width * height) + 1) & !1;
+        self.cpu_blit_words = Some((data_size >> 1) as usize - 1);
+
+        let x_pos = dest_coord & 0x03FF;
+        let y_pos = (dest_coord >> 16) & 0x01FF;
+
+        self.cpu_blit_address = Some((y_pos << 10) | x_pos);
+
+        self.cpu_blit = true;
     }
 
     fn draw_mode_setting(&mut self, command: u32) {

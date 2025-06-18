@@ -183,7 +183,7 @@ impl CPU {
 
     fn read32(&mut self, addr: u32) -> u32 {
         self.stalled = *self.dma_running.borrow();
-        self.interface.borrow().read32(addr)
+        self.interface.borrow_mut().read32(addr)
     }
 
     fn read16(&mut self, addr: u32) -> u16 {

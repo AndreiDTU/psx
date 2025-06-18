@@ -43,7 +43,7 @@ impl Interface {
         Ok(Self { bios, dma: Weak::new(), dram, gpu })
     }
 
-    pub fn read32(&self, addr: u32) -> u32 {
+    pub fn read32(&mut self, addr: u32) -> u32 {
         if addr & 0b11 != 0 {panic!("Unaligned read at {:08X}", addr)}
         
         let addr = mask_region(addr);
