@@ -14,9 +14,6 @@ pub mod ram;
 pub mod render;
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
-    // let exe = exe_binding.as_slice();
-
     let tris = Arc::new(Mutex::new(Vec::new()));
     let display_range = Arc::new(Mutex::new(((0, 0), (0, 0))));
     let renderer = Renderer::new(tris.clone(), display_range.clone());
@@ -26,6 +23,9 @@ fn main() -> Result<(), anyhow::Error> {
     let proxy = event_loop.create_proxy();
 
     thread::spawn(move || {
+        // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
+        // let exe = exe_binding.as_slice();
+        
         let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), tris, display_range, proxy).unwrap()));
 
         let dma_running = Rc::new(RefCell::new(false));

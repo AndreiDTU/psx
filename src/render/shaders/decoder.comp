@@ -9,7 +9,7 @@ layout(std140, binding = 1) uniform DrawArea {
 
 struct Vertex {
     i16vec2 coords;
-    uint color; // Packed 15-bit RGB (PS1 format)
+    uint color;
     uint16_t texpage;
     uint16_t clut;
 };
@@ -44,7 +44,7 @@ layout(std430, binding = 4) buffer CounterBuffer {
 };
 
 uvec3 unpack_ps1_color(uint col) {
-    return uvec3(col & 0x1F, (col >> 5) & 0x1F, (col >> 10) & 0x1F) * 8;
+    return uvec3(col & 0x1F, (col >> 8) & 0x1F, (col >> 16) & 0x1F) * 8;
 }
 
 void ensure_vertex_order(inout Vertex a, inout Vertex b, Vertex c) {

@@ -154,7 +154,7 @@ impl GPU {
     }
 
     pub fn write_gp0(&mut self, command: u32) {
-        // if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
+        if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
         match self.gp0_mode {
             GP0_Mode::Command => self.set_remaining_words(command),
             GP0_Mode::ImageLoad => self.command_buffer.push_back(command),
@@ -162,7 +162,7 @@ impl GPU {
     }
 
     pub fn write_gp1(&mut self, command: u32) {
-        // println!("GP1: {:08X}", command);
+        println!("GP1: {:08X}", command);
         self.execute_gp1(command);
     }
 

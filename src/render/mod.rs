@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, CommandBufferUsage}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, DescriptorSet, WriteDescriptorSet}, device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags}, format::Format, image::{view::ImageView, Image, ImageCreateInfo, ImageType, ImageUsage}, instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions}, memory::allocator::{AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo, ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{Framebuffer, FramebufferCreateInfo}, swapchain::{self, PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, GpuFuture}, Validated, VulkanError, VulkanLibrary};
-use winit::{application::ApplicationHandler, event::WindowEvent, window::Window};
+use vulkano::{buffer::{Buffer, BufferCreateInfo, BufferUsage}, command_buffer::{allocator::{StandardCommandBufferAllocator, StandardCommandBufferAllocatorCreateInfo}, AutoCommandBufferBuilder, ClearColorImageInfo, CommandBufferUsage, CopyImageInfo, ImageCopy}, descriptor_set::{allocator::{StandardDescriptorSetAllocator, StandardDescriptorSetAllocatorCreateInfo}, DescriptorSet, WriteDescriptorSet}, device::{Device, DeviceCreateInfo, DeviceExtensions, DeviceFeatures, Queue, QueueCreateInfo, QueueFlags}, format::Format, image::{view::ImageView, Image, ImageAspects, ImageCreateInfo, ImageLayout, ImageSubresourceRange, ImageType, ImageUsage}, instance::{Instance, InstanceCreateFlags, InstanceCreateInfo, InstanceExtensions}, memory::allocator::{AllocationCreateInfo, FreeListAllocator, GenericMemoryAllocator, MemoryTypeFilter, StandardMemoryAllocator}, pipeline::{compute::ComputePipelineCreateInfo, layout::PipelineDescriptorSetLayoutCreateInfo, ComputePipeline, Pipeline, PipelineBindPoint, PipelineLayout, PipelineShaderStageCreateInfo}, render_pass::{Framebuffer, FramebufferCreateInfo}, swapchain::{self, PresentMode, Surface, Swapchain, SwapchainCreateInfo, SwapchainPresentInfo}, sync::{self, GpuFuture}, Validated, VulkanError, VulkanLibrary};
+use winit::{application::ApplicationHandler, dpi::{LogicalSize, Size}, event::WindowEvent, window::{Window, WindowAttributes}};
 
 use crate::render::{decoder_shader::TriTask, primitives::Tri};
 
@@ -15,7 +15,10 @@ pub struct State {
 
 impl ApplicationHandler for State {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        let window = Some(Arc::new(event_loop.create_window(Window::default_attributes()).unwrap()));
+        let window_attributes = WindowAttributes::default();
+        let window_attributes = window_attributes.with_inner_size(Size::Logical(LogicalSize::new(1024.0, 512.0)));
+        let window = Some(Arc::new(event_loop.create_window(window_attributes).unwrap()));
+        
         self.renderer.setup_swapchain(window.clone().unwrap().clone());
         self.window = window;
     }
@@ -77,6 +80,7 @@ impl Renderer {
             InstanceCreateInfo {
                 flags: InstanceCreateFlags::ENUMERATE_PORTABILITY,
                 enabled_extensions: InstanceExtensions {
+                    ext_debug_utils: true,
                     khr_win32_surface: true,
                     ..Default::default()
                 },
@@ -193,9 +197,9 @@ impl Renderer {
             surface.clone(),
             SwapchainCreateInfo {
                 min_image_count: 2,
-                image_format: Format::B8G8R8A8_UNORM,
-                image_extent: [640, 480],
-                image_usage: ImageUsage::COLOR_ATTACHMENT,
+                image_format: Format::R8G8B8A8_UNORM,
+                image_extent: [1024, 512],
+                image_usage: ImageUsage::COLOR_ATTACHMENT | ImageUsage::TRANSFER_DST | ImageUsage::STORAGE,
                 present_mode: PresentMode::Fifo,
                 ..Default::default()
             },
@@ -241,7 +245,8 @@ impl Renderer {
     pub fn render(&mut self) {
         let num_tris = self.tris.lock().unwrap().len();
         if num_tris == 0 {return}
-        println!("Redraw!");
+        println!("{:#?}", self.tris.lock().unwrap());
+        println!("{:#?}", self.display_range.lock().unwrap());
 
         let tris_buf = Buffer::from_iter(
             self.memory_allocator.clone(),
@@ -257,23 +262,26 @@ impl Renderer {
         ).unwrap();
 
         let ((min_x, max_x), (min_y, max_y)) = *self.display_range.lock().unwrap();
-        let size = [max_x - min_x, max_y - min_y];
 
-        let output_img = Image::new(
-            self.memory_allocator.clone(),
-            ImageCreateInfo {
-                image_type: ImageType::Dim2d,
-                format: Format::R8G8B8A8_UNORM,
-                extent: [640, 480, 1],
-                usage: ImageUsage::TRANSFER_DST | ImageUsage::STORAGE,
-                ..Default::default()
-            },
-            AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
-                ..Default::default()
-            },
-        ).unwrap();
-        let output_view = ImageView::new_default(output_img.clone()).unwrap();
+        let swapchain = self.swapchain.as_mut().unwrap();
+        let (image_i, suboptimal, acquire_future) =
+        match swapchain::acquire_next_image(swapchain.clone(), None)
+            .map_err(Validated::unwrap)
+        {
+            Ok(r) => r,
+            Err(VulkanError::OutOfDate) => {
+                self.recreate_swapchain = true;
+                return;
+            }
+            Err(e) => panic!("failed to acquire next image: {e}"),
+        };
+
+        if suboptimal {
+            self.recreate_swapchain = true;
+        }
+
+        let next_image = self.swapchain_images.as_ref().unwrap()[image_i as usize].clone();
+        let view = ImageView::new_default(next_image.clone()).unwrap();
 
         let draw_area_buf = Buffer::from_data(
             self.memory_allocator.clone(),
@@ -298,7 +306,7 @@ impl Renderer {
                 memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
                 ..Default::default()
             },
-            std::iter::repeat(0u8).take(num_tris * size_of::<TriTask>())
+            std::iter::repeat(TriTask::default()).take(num_tris)
         ).unwrap();
 
         let counter_buf = Buffer::from_data(
@@ -308,7 +316,7 @@ impl Renderer {
                 ..Default::default()
             },
             AllocationCreateInfo {
-                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_RANDOM_ACCESS,
+                memory_type_filter: MemoryTypeFilter::PREFER_DEVICE | MemoryTypeFilter::HOST_SEQUENTIAL_WRITE,
                 ..Default::default()
             },
             0u32
@@ -330,7 +338,7 @@ impl Renderer {
             self.descriptor_allocator.clone(),
             self.raster_pipeline.layout().set_layouts()[0].clone(),
             [
-                WriteDescriptorSet::image_view(2, output_view.clone()),
+                WriteDescriptorSet::image_view(2, view.clone()),
                 WriteDescriptorSet::buffer(3, task_buf.clone()),
                 WriteDescriptorSet::buffer(4, counter_buf.clone()),
             ],
@@ -340,64 +348,32 @@ impl Renderer {
         let mut builder = AutoCommandBufferBuilder::primary(
             self.command_allocator.clone(),
             self.queue.queue_family_index(),
-            CommandBufferUsage::MultipleSubmit,
+            CommandBufferUsage::OneTimeSubmit,
         ).unwrap();
 
-        let group_count = (((self.tris.lock().unwrap().len() as u32 as usize) + 63) / 64) as u32;
+        *counter_buf.write().unwrap() = 0;
+
         unsafe { 
             builder
+                .clear_color_image(ClearColorImageInfo::image(next_image.clone())).unwrap()
                 .bind_pipeline_compute(self.decoder_pipeline.clone()).unwrap()
                 .bind_descriptor_sets(PipelineBindPoint::Compute, self.decoder_pipeline.layout().clone(), 0, decoder_set.clone()).unwrap()
-                .dispatch([group_count, 1, 1]).unwrap()
+                .dispatch([num_tris as u32, 1, 1]).unwrap()
                 .bind_pipeline_compute(self.raster_pipeline.clone()).unwrap()
                 .bind_descriptor_sets(PipelineBindPoint::Compute, self.raster_pipeline.layout().clone(), 0, raster_set.clone()).unwrap()
-                .dispatch([size[0] / 8, size[1] / 8, 1]).unwrap();
+                .dispatch([num_tris as u32, 1, 1]).unwrap();
         }
         
         let command_buffer = builder.build().unwrap();
-        let future = sync::now(self.queue.device().clone())
-            .then_execute(self.queue.clone(), command_buffer.clone()).unwrap()
-            .then_signal_fence_and_flush().unwrap();
 
-        future.wait(None).unwrap();
-
-        let swapchain = self.swapchain.as_mut().unwrap();
-        let (image_i, suboptimal, acquire_future) =
-        match swapchain::acquire_next_image(swapchain.clone(), None)
-            .map_err(Validated::unwrap)
-        {
-            Ok(r) => r,
-            Err(VulkanError::OutOfDate) => {
-                self.recreate_swapchain = true;
-                return;
-            }
-            Err(e) => panic!("failed to acquire next image: {e}"),
-        };
-
-        if suboptimal {
-            self.recreate_swapchain = true;
-        }
-
-        let execution = sync::now(self.queue.device().clone())
-            .join(acquire_future)
-            .then_execute(self.queue.clone(), command_buffer.clone())
-            .unwrap()
+        let future = acquire_future
+            .then_execute(self.queue.clone(), command_buffer).unwrap()
             .then_swapchain_present(
                 self.queue.clone(),
-                SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_i)
-            ).then_signal_fence_and_flush();
+                SwapchainPresentInfo::swapchain_image_index(swapchain.clone(), image_i),
+            ).then_signal_fence_and_flush().unwrap();
 
-        match execution.map_err(Validated::unwrap) {
-            Ok(future) => {
-                future.wait(None).unwrap();
-            }
-            Err(VulkanError::OutOfDate) => {
-                self.recreate_swapchain = true;
-            }
-            Err(e) => {
-                println!("failed to flush future: {e}");
-            }
-        }
+        future.wait(None).unwrap();
 
         self.tris.lock().unwrap().clear();
     }
@@ -406,7 +382,8 @@ impl Renderer {
 mod decoder_shader {
     vulkano_shaders::shader!{
         ty: "compute",
-        path: "src\\render\\shaders\\decoder.comp"
+        path: "src\\render\\shaders\\decoder.comp",
+        custom_derives: [Default, Clone, Copy]
     }
 }
 
