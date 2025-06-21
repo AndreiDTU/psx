@@ -1,31 +1,55 @@
-#![allow(non_snake_case)]
+#![allow(non_snake_case, non_camel_case_types)]
 
-use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc};
+use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, sync::{Arc, Mutex}, thread};
 
-use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU};
+use winit::event_loop::EventLoop;
+
+use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU, render::{Renderer, State}};
 
 pub mod bus;
 pub mod bios;
 pub mod cpu;
 pub mod gpu;
 pub mod ram;
+pub mod render;
 
 fn main() -> Result<(), anyhow::Error> {
     // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
     // let exe = exe_binding.as_slice();
 
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"))?));
-    let dma_running = Rc::new(RefCell::new(false));
-    let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
-    interface.borrow_mut().dma = Rc::downgrade(&dma);
-    let mut cpu = CPU::new(interface.clone(), dma_running.clone());
+    let tris = Arc::new(Mutex::new(Vec::new()));
+    let display_range = Arc::new(Mutex::new(((0, 0), (0, 0))));
+    let renderer = Renderer::new(tris.clone(), display_range.clone());
 
-    loop {
-        // sideload_exe(&mut cpu, interface.clone(), exe);
-        cpu.tick();
-        dma.borrow_mut().tick();
-        interface.borrow_mut().gpu.tick();
-    }
+    let event_loop = EventLoop::new()?;
+
+    let proxy = event_loop.create_proxy();
+
+    thread::spawn(move || {
+        let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), tris, display_range, proxy).unwrap()));
+
+        let dma_running = Rc::new(RefCell::new(false));
+        let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
+        interface.borrow_mut().dma = Rc::downgrade(&dma);
+        let mut cpu = CPU::new(interface.clone(), dma_running.clone());
+
+        loop {
+            // sideload_exe(&mut cpu, interface.clone(), exe);
+            cpu.tick();
+            dma.borrow_mut().tick();
+            interface.borrow_mut().gpu.tick();
+        }
+    });
+    
+    let mut state = State {
+        window: None,
+        renderer,
+        minimized: false,
+    };
+
+    event_loop.run_app(&mut state)?;
+
+    Ok(())
 }
 
 #[allow(unused)]

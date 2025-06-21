@@ -1,0 +1,49 @@
+#version 450
+
+struct TriTask {
+    ivec2 min;
+    ivec2 max;
+    ivec2 v0;
+    ivec2 v1;
+    ivec2 v2;
+    uvec3 c0;
+    uvec3 c1;
+    uvec3 c2;
+};
+
+layout(std430, binding = 3) buffer TaskBuffer {
+    TriTask tasks[];
+};
+
+layout(std430, binding = 4) buffer CounterBuffer {
+    uint taskCount;
+};
+
+layout(binding = 2, rgba8) uniform writeonly image2D framebuffer;
+
+int cross_product_z(ivec2 a, ivec2 b, ivec2 c) {
+    return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+bool is_inside_triangle(ivec2 p, ivec2 v0, ivec2 v1, ivec2 v2) {
+    return cross_product_z(v0, v1, p) >= 0 &&
+           cross_product_z(v1, v2, p) >= 0 &&
+           cross_product_z(v2, v0, p) >= 0;
+}
+
+layout(local_size_x = 1) in;
+void main() {
+    uint gid = gl_GlobalInvocationID.x;
+    if (gid >= taskCount) return;
+
+    TriTask t = tasks[gid];
+
+    for (int y = t.min.y; y <= t.max.y; ++y) {
+        for (int x = t.min.x; x <= t.max.x; ++x) {
+            ivec2 p = ivec2(x, y);
+            if (is_inside_triangle(p, t.v0, t.v1, t.v2)) {
+                imageStore(framebuffer, p, vec4(vec3(t.c0) / 255.0, 1.0));
+            }
+        }
+    }
+}

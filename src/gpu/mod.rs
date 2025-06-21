@@ -1,8 +1,9 @@
-use std::{collections::VecDeque, hint::unreachable_unchecked};
+use std::{collections::VecDeque, hint::unreachable_unchecked, sync::{Arc, Mutex}};
 
 use modular_bitfield::{bitfield, prelude::*};
+use winit::event_loop::EventLoopProxy;
 
-use crate::ram::RAM;
+use crate::{ram::RAM, render::primitives::{Tri, Vertex}};
 
 const VRAM_SIZE: usize = 1024 * 1024;
 
@@ -48,8 +49,6 @@ pub struct GPU {
     gpu_read: u32,
 
     display_area_start: u32,
-    x1: u32, x2: u32,
-    y1: u32, y2: u32,
     x_offset: u32, y_offset: u32,
 
     texture_window_mask_x: u32,
@@ -69,10 +68,17 @@ pub struct GPU {
     cpu_blit_words: Option<usize>,
 
     gp0_mode: GP0_Mode,
+
+    proxy: EventLoopProxy<()>,
+    cycles: usize,
+
+    tris: Arc<Mutex<Vec<Tri>>>,
+    display_range: Arc<Mutex<((u32, u32), (u32, u32))>>,
 }
 
 impl GPU {
-    pub fn new() -> Self {
+    pub fn new(tris: Arc<Mutex<Vec<Tri>>>, display_range: Arc<Mutex<((u32, u32), (u32, u32))>>, proxy: EventLoopProxy<()>) -> Self {
+        println!("GPU Tri ptr = {:p}", Arc::as_ptr(&tris));
         Self {
             vram: RAM::new(VRAM_SIZE),
 
@@ -80,8 +86,6 @@ impl GPU {
             gpu_read: 0,
 
             display_area_start: 0,
-            x1: 0, x2: 0,
-            y1: 0, y2: 0,
             x_offset: 0, y_offset: 0,
     
             texture_window_mask_x: 0,
@@ -101,10 +105,22 @@ impl GPU {
             cpu_blit_words: None,
 
             gp0_mode: GP0_Mode::Command,
+
+            proxy,
+            cycles: 0,
+
+            tris,
+            display_range,
         }
     }
 
     pub fn tick(&mut self) {
+        self.cycles += 1;
+        if self.cycles == 3413 * 263 {
+            self.cycles = 0;
+            self.proxy.send_event(()).unwrap();
+        }
+
         if let Some(remaining_words) = self.remaining_words {
             if self.command_buffer.len() > remaining_words {
                 let command = self.command_buffer.pop_front().unwrap();
@@ -128,17 +144,17 @@ impl GPU {
             }
         }
 
-        println!("GPUREAD = {:08X}", self.gpu_read);
+        // println!("GPUREAD = {:08X}", self.gpu_read);
         self.gpu_read
     }
 
     pub fn read_gp1(&self) -> u32 {
-        println!("GPUSTAT = {:08X}", u32::from_le_bytes(self.gpu_status.bytes));
+        // println!("GPUSTAT = {:08X}", u32::from_le_bytes(self.gpu_status.bytes));
         u32::from_le_bytes(self.gpu_status.bytes) & !(1 << 19)
     }
 
     pub fn write_gp0(&mut self, command: u32) {
-        if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
+        // if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
         match self.gp0_mode {
             GP0_Mode::Command => self.set_remaining_words(command),
             GP0_Mode::ImageLoad => self.command_buffer.push_back(command),
@@ -146,7 +162,7 @@ impl GPU {
     }
 
     pub fn write_gp1(&mut self, command: u32) {
-        println!("GP1: {:08X}", command);
+        // println!("GP1: {:08X}", command);
         self.execute_gp1(command);
     }
 
@@ -240,6 +256,19 @@ impl GPU {
             points.get(3).unwrap().0, points.get(3).unwrap().1,
             color
         );
+
+        let vertices: [Vertex; 4] = std::array::from_fn(|i| {
+            Vertex {
+                coords: [points.get(i).unwrap().0 as i16, points.get(i).unwrap().1 as i16],
+                color: command.to_le_bytes(),
+                texpage: 0, clut: 0,
+            }
+        });
+
+        let mut tris = self.tris.lock().unwrap();
+
+        tris.push(Tri {vertices: *vertices.first_chunk().unwrap()});
+        tris.push(Tri {vertices: *vertices.last_chunk().unwrap()});
         
         self.remaining_words = None;
     }
@@ -439,15 +468,25 @@ impl GPU {
     }
 
     fn drawing_area_top_left(&mut self, command: u32) {
-        self.x1 = command & 0x0000_03FF;
-        self.y1 = (command >> 10) & 0x0000_01FF;
+        let x1 = command & 0x0000_03FF;
+        let y1 = (command >> 10) & 0x0000_01FF;
         
+        let mut display_range = self.display_range.lock().unwrap();
+
+        let ((_, x2), (_, y2)) = *display_range;
+        *display_range = ((x1, x2), (y1, y2));
+
         self.remaining_words = None;
     }
 
     fn drawing_area_bottom_right(&mut self, command: u32) {
-        self.x2 = command & 0x0000_03FF;
-        self.y2 = (command >> 10) & 0x0000_01FF;
+        let x2 = command & 0x0000_03FF;
+        let y2 = (command >> 10) & 0x0000_01FF;
+        
+        let mut display_range = self.display_range.lock().unwrap();
+        
+        let ((x1, _), (y1, _)) = *display_range;
+        *display_range = ((x1, x2), (y1, y2));
         
         self.remaining_words = None;
     }
@@ -521,13 +560,23 @@ impl GPU {
     }
 
     fn set_horizontal_display_range(&mut self, command: u32) {
-        self.x1 = command & 0x0000_0FFF;
-        self.x2 = (command >> 12) & 0x0000_0FFF;
+        let x1 = command & 0x0000_0FFF;
+        let x2 = (command >> 12) & 0x0000_0FFF;
+
+        let mut display_range = self.display_range.lock().unwrap();
+
+        let (_, y) = *display_range;
+        *display_range = ((x1, x2), y);
     }
 
     fn set_vertical_display_range(&mut self, command: u32) {
-        self.y1 = command & 0x0000_03FF;
-        self.y2 = (command >> 10) & 0x0000_03FF;
+        let y1 = command & 0x0000_03FF;
+        let y2 = (command >> 10) & 0x0000_03FF;
+
+        let mut display_range = self.display_range.lock().unwrap();
+
+        let (x, _) = *display_range;
+        *display_range = (x, (y1, y2));
     }
 
     fn set_display_mode(&mut self, command: u32) {
