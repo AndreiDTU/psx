@@ -1,6 +1,8 @@
-#![allow(non_snake_case)]
+#![allow(non_snake_case, non_camel_case_types)]
 
 use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc};
+
+use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
 use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU};
 
@@ -10,9 +12,24 @@ pub mod cpu;
 pub mod gpu;
 pub mod ram;
 
+const VRAM_WIDTH: u32 = 1024;
+const VRAM_HEIGHT: u32 = 512;
+
 fn main() -> Result<(), anyhow::Error> {
     // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
     // let exe = exe_binding.as_slice();
+
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+    let window = video_subsystem
+        .window("PSX", VRAM_WIDTH, VRAM_HEIGHT)
+        .position_centered()
+        .build()?;
+
+    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    let creator = canvas.texture_creator();
+    let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, VRAM_WIDTH, VRAM_HEIGHT)?;
+    let mut event_pump = sdl_context.event_pump().unwrap();
 
     let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"))?));
     let dma_running = Rc::new(RefCell::new(false));
@@ -24,7 +41,21 @@ fn main() -> Result<(), anyhow::Error> {
         // sideload_exe(&mut cpu, interface.clone(), exe);
         cpu.tick();
         dma.borrow_mut().tick();
-        interface.borrow_mut().gpu.tick();
+        if interface.borrow_mut().gpu.tick() {
+            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| [color.r, color.g, color.b]).collect();
+            texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
+
+            canvas.clear();
+            canvas.copy(&texture, None, None).unwrap();
+            canvas.present();
+
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
+                    _ => {}
+                }
+            }
+        }
     }
 }
 

@@ -2,9 +2,11 @@ use std::{collections::VecDeque, hint::unreachable_unchecked};
 
 use modular_bitfield::{bitfield, prelude::*};
 
-use crate::ram::RAM;
+use crate::{gpu::primitives::color::Color, ram::RAM};
 
 const VRAM_SIZE: usize = 1024 * 1024;
+
+pub mod primitives;
 
 #[bitfield]
 pub struct GPUSTAT {
@@ -35,508 +37,226 @@ pub struct GPUSTAT {
     drawing_even_odd_lines_in_interlace_mode: B1,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+struct VramCopyFields {
+    vram_x: u16,
+    vram_y: u16,
+
+    width: u16,
+    height: u16,
+
+    current_row: u16,
+    current_col: u16,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum ParametrizedCommand {
+    CPU_VRAM_Copy,
+    Flat_Polygon(u32),
+}
+
 #[derive(PartialEq)]
-enum GP0_Mode {
-    Command,
-    ImageLoad,
+enum GP0_State {
+    CommandStart,
+    ReceivingParameters { 
+        idx: usize,
+        expected: usize,
+        command: ParametrizedCommand,
+    },
+    ReceivingData(VramCopyFields),
 }
 
 pub struct GPU {
     vram: RAM,
+    gp0_mode: GP0_State,
+    gp0_parameters: VecDeque<u32>,
 
-    gpu_status: GPUSTAT,
-    gpu_read: u32,
-
-    display_area_start: u32,
-    x1: u32, x2: u32,
-    y1: u32, y2: u32,
-    x_offset: u32, y_offset: u32,
-
-    texture_window_mask_x: u32,
-    texture_window_mask_y: u32,
-    texture_window_offset_x: u32,
-    texture_window_offset_y: u32,
-    
-    textured_rectangle_x_flip: bool,
-    textured_rectangle_y_flip: bool,
-
-    command_buffer: VecDeque<u32>,
-    remaining_words: Option<usize>,
-    blit_address: Option<u32>,
-
-    cpu_blit: bool,
-    cpu_blit_address: Option<u32>,
-    cpu_blit_words: Option<usize>,
-
-    gp0_mode: GP0_Mode,
+    cycles: usize,
 }
 
 impl GPU {
     pub fn new() -> Self {
+        let vram = RAM::new(VRAM_SIZE);
+
         Self {
-            vram: RAM::new(VRAM_SIZE),
+            vram,
+            gp0_mode: GP0_State::CommandStart,
+            gp0_parameters: VecDeque::new(),
 
-            gpu_status: GPUSTAT::from_bytes(0x1C00_0000u32.to_le_bytes()),
-            gpu_read: 0,
-
-            display_area_start: 0,
-            x1: 0, x2: 0,
-            y1: 0, y2: 0,
-            x_offset: 0, y_offset: 0,
-    
-            texture_window_mask_x: 0,
-            texture_window_mask_y: 0,
-            texture_window_offset_x: 0,
-            texture_window_offset_y: 0,
-
-            textured_rectangle_x_flip: false,
-            textured_rectangle_y_flip: false,
-
-            command_buffer: VecDeque::with_capacity(1024),
-            remaining_words: None,
-            blit_address: None,
-
-            cpu_blit: false,
-            cpu_blit_address: None,
-            cpu_blit_words: None,
-
-            gp0_mode: GP0_Mode::Command,
+            cycles: 0,
         }
     }
 
-    pub fn tick(&mut self) {
-        if let Some(remaining_words) = self.remaining_words {
-            if self.command_buffer.len() > remaining_words {
-                let command = self.command_buffer.pop_front().unwrap();
-                match self.gp0_mode {
-                    GP0_Mode::Command => self.execute_gp0(command),
-                    GP0_Mode::ImageLoad => self.vram_blit(),
-                }
-            }
+    pub fn tick(&mut self) -> bool {
+        self.cycles += 1;
+        if self.cycles == 564_480 {
+            self.cycles = 0;
+            return true;
         }
+
+        return false;
     }
 
     pub fn read_gp0(&mut self) -> u32 {
-        if self.cpu_blit && self.cpu_blit_words.is_some() {
-            let addr = self.cpu_blit_address.unwrap();
-            self.gpu_read = self.vram.read32(addr);
-            self.cpu_blit_address = Some((addr + 1) & 0x000F_FFFF);
-            self.cpu_blit_words = Some(self.cpu_blit_words.unwrap() - 1);
-            if self.cpu_blit_words == Some(0) {
-                self.cpu_blit_words = None;
-                self.cpu_blit = false;
+        0x00
+    }
+
+    pub fn read_gp1(&mut self) -> u32 {
+        0x1C00_0000
+    }
+
+    pub fn write_gp0(&mut self, word: u32) {
+        if self.gp0_mode == GP0_State::CommandStart {println!("GP0 {word:08X}")}
+        self.gp0_mode = match self.gp0_mode {
+            GP0_State::CommandStart => match word >> 29 {
+                1 => self.set_polygon_state(word),
+                2 => {
+                    println!("draw line {word:08X}");
+                    GP0_State::CommandStart
+                }
+                3 => {
+                    println!("draw rectangle {word:08X}");
+                    GP0_State::CommandStart
+                }
+                4 => {
+                    println!("VRAM-to-VRAM copy {word:08X}");
+                    GP0_State::CommandStart
+                }
+                5 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::CPU_VRAM_Copy},
+                6 => {
+                    println!("VRAM-to-CPU copy {word:08X}");
+                    GP0_State::CommandStart
+                }
+                0 | 7 => match word >> 24 {
+                    _ => {
+                        println!("{word:08X}");
+                        GP0_State::CommandStart
+                    }
+                }
+                _ => unsafe { unreachable_unchecked() }
+            }
+
+            GP0_State::ReceivingParameters {idx, expected, command} => {
+                self.gp0_parameters.push_back(word);
+
+                if idx == expected {
+                    match command {
+                        ParametrizedCommand::CPU_VRAM_Copy => self.initialize_cpu_vram_copy(),
+                        ParametrizedCommand::Flat_Polygon(word) => {
+                            let polygon_type = (word >> 24) as u8; match polygon_type {
+                                0x28 => self.draw_flat_quad(word),
+                                _ => {
+                                    println!("Polygon command not implemented: {word:08X}");
+                                    GP0_State::CommandStart
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    GP0_State::ReceivingParameters { idx: idx + 1, expected, command }
+                }
+            }
+
+            GP0_State::ReceivingData(_) => self.process_cpu_vram_copy(word)
+        }
+    }
+    
+    fn set_polygon_state(&mut self, word: u32) -> GP0_State {
+        println!("draw polygon {word:08X}");
+
+        let vertices = 3 + ((word >> 27) & 1);
+        let color_words = (vertices - 1) * ((word >> 28) & 1);
+        let texture_words = vertices * ((word >> 26) & 1);
+
+        GP0_State::ReceivingParameters {
+            idx: 1,
+            expected: (vertices + color_words + texture_words) as usize,
+            command: ParametrizedCommand::Flat_Polygon(word)
+        }
+    }
+
+    fn draw_flat_quad(&mut self, word: u32) -> GP0_State {
+
+
+        GP0_State::CommandStart
+    }
+
+    pub fn write_gp1(&mut self, word: u32) {
+        println!("GP1 {word:08X}");
+    }
+
+    fn initialize_cpu_vram_copy(&mut self) -> GP0_State {
+        let (size, coords) = (self.gp0_parameters.pop_front().unwrap(), self.gp0_parameters.pop_front().unwrap());
+
+        let vram_x = (coords & 0x3FF) as u16;
+        let vram_y = ((coords >> 16) & 0x1FF) as u16;
+
+        let mut width = (size & 0x3FF) as u16;
+        if width == 0 {width = 1024}
+
+        let mut height = ((size >> 16) & 0x3FF) as u16;
+        if height == 0 {height = 512}
+
+        GP0_State::ReceivingData(
+            VramCopyFields { vram_x: 
+                vram_x, vram_y,
+                width, height, 
+                
+                current_row: 0, current_col: 0
+            }
+        )
+    }
+
+    fn process_cpu_vram_copy(&mut self, word: u32) -> GP0_State {
+        let GP0_State::ReceivingData(mut fields) = self.gp0_mode else {unreachable!()};
+
+        for i in 0..=1 {
+            let halfword = (word >> (16 * i)) as u16;
+
+            let vram_row = ((fields.vram_y + fields.current_row) & 0x1FF) as u32;
+            let vram_col = ((fields.vram_x + fields.current_col) & 0x3FF) as u32;
+
+            let vram_addr = 2 * (1024 * vram_row + vram_col);
+
+            println!("[{vram_addr:08X}] <- {halfword:04X}");
+            self.vram.write16(vram_addr, halfword);
+
+            fields.current_col += 1;
+            if fields.current_col == fields.width {
+                fields.current_col = 0;
+                fields.current_row += 1;
+
+                if fields.current_row == fields.height {
+                    return GP0_State::CommandStart;
+                }
             }
         }
 
-        println!("GPUREAD = {:08X}", self.gpu_read);
-        self.gpu_read
+        GP0_State::ReceivingData(fields)
     }
 
-    pub fn read_gp1(&self) -> u32 {
-        println!("GPUSTAT = {:08X}", u32::from_le_bytes(self.gpu_status.bytes));
-        u32::from_le_bytes(self.gpu_status.bytes) & !(1 << 19)
+    fn draw_pixel(&mut self, color: u32, coords: u32) {
+        let color_halfword: u16 = Color::from(color).into();
+        
+        let x = coords & 0x3FF;
+        let y = (coords >> 16) & 0x1FF;
+
+        let vram_addr = 2 * (1024 * y + x);
+        
+        self.vram.write16(vram_addr, color_halfword);
     }
 
-    pub fn write_gp0(&mut self, command: u32) {
-        if self.gp0_mode == GP0_Mode::Command {println!("GP0: {:08X}", command)};
-        match self.gp0_mode {
-            GP0_Mode::Command => self.set_remaining_words(command),
-            GP0_Mode::ImageLoad => self.command_buffer.push_back(command),
-        }
-    }
+    pub fn render_vram(&self) -> Box<[Color; 512 * 1024]> {
+        let mut output = Box::new([Color::default(); 512 * 1024]);
+        for y in 0..512 {
+            for x in 0..1024 {
+                let vram_addr = (2 * (1024 * y + x)) as u32;
+                let pixel = self.vram.read16(vram_addr);
 
-    pub fn write_gp1(&mut self, command: u32) {
-        println!("GP1: {:08X}", command);
-        self.execute_gp1(command);
-    }
-
-    fn set_remaining_words(&mut self, command: u32) {
-        let command_number = command >> 24;
-        if self.remaining_words == None {
-            let parameter_count = match command_number {
-                0x00 => return,
-                0x01 => 0,
-                0x28 => 4,
-                0x2C => 8,
-                0x30 => 5,
-                0x38 => 7,
-                0x3C => 11,
-                0xA0 => 2,
-                0xC0 => 3,
-                0xE1 => 0,
-                0xE2 => 0,
-                0xE3 => 0,
-                0xE4 => 0,
-                0xE5 => 0,
-                0xE6 => 0,
-                _ => panic!("Unsupported GPU command {:08X}", command)
-            };
-
-            self.remaining_words = Some(parameter_count);
+                output[1024 * y + x] = Color::from(pixel);
+            }
         }
 
-        self.command_buffer.push_back(command);
-    }
-
-    fn execute_gp0(&mut self, command: u32) {
-        let command_number = command >> 24;
-        match command_number {
-            0x00 => {}
-            0x01 => self.clear_cache(),
-            0x28 => self.draw_monochrome_quad(command),
-            0x2C => self.draw_textured_blended_quad(command),
-            0x30 => self.draw_gouraud_tri(command),
-            0x38 => self.draw_gouraud_quad(command),
-            0x3C => self.draw_textured_gouraud_quad(command),
-            0xA0 => self.begin_image_load(),
-            0xC0 => self.begin_image_store(),
-            0xE1 => self.draw_mode_setting(command),
-            0xE2 => self.texture_window_setting(command),
-            0xE3 => self.drawing_area_top_left(command),
-            0xE4 => self.drawing_area_bottom_right(command),
-            0xE5 => self.drawing_offset(command),
-            0xE6 => self.mask_bit_setting(command),
-            _ => panic!("Unsupported GPU command {:08X}", command)
-        }
-        self.command_buffer.clear();
-    }
-
-    fn vram_blit(&mut self) {
-        let mut address = self.blit_address.unwrap();
-        self.command_buffer.iter()
-            .for_each(|word| {
-                // println!("VRAM[{:08X}] <- {:08X}", address, *word);
-                self.vram.write32(address, *word);
-                address += 1;
-                address &= 0x000F_FFFF;
-            });
-        
-        self.blit_address = None;
-        self.command_buffer.clear();
-        self.remaining_words = None;
-        self.gp0_mode = GP0_Mode::Command;
-    }
-
-    fn clear_cache(&mut self) {
-        println!("Texture cache not yet implemented.");
-        self.remaining_words = None;
-    }
-
-    fn draw_monochrome_quad(&mut self, command: u32) {
-        let points: Vec<(u32, u32)> = self.command_buffer
-            .drain(..)
-            .map(|w| {
-                ((w >> 16), (w & 0x0000_FFFF))
-            })
-            .collect();
-
-        let color = command & 0x00FF_FFFF;
-
-        println!(
-            "Monochrome Quad: ({}, {}) ({}, {}) ({}, {}) ({}, {}) RGB24: {:06X}",
-            points.get(0).unwrap().0, points.get(0).unwrap().1,
-            points.get(1).unwrap().0, points.get(1).unwrap().1,
-            points.get(2).unwrap().0, points.get(2).unwrap().1,
-            points.get(3).unwrap().0, points.get(3).unwrap().1,
-            color
-        );
-        
-        self.remaining_words = None;
-    }
-
-    fn draw_textured_blended_quad(&mut self, command: u32) {
-        let color = command & 0x00FF_FFFF;
-        let mut points: Vec<(u32, u32)> = Vec::new();
-        let mut tex_coords: Vec<(u32, u32)> = Vec::new();
-        let mut CLUT = 0;
-        let mut page = 0;
-        
-        self.command_buffer
-            .drain(..)
-            .enumerate()
-            .for_each(|(i, w)| {
-                if i == 2 {
-                    CLUT = w >> 16;
-                } else if i == 4 {
-                    page = w >> 16;
-                }
-
-                if i & 1 == 0 {
-                    points.push((((w >> 16) & 0x0000_FFFF), w & 0x0000_FFFF));
-                } else {
-                    tex_coords.push((((w >> 8) & 0xF), w & 0xF));
-                }
-            });
-
-        println!(
-            "Textured Blended Quad: CLUT: {:04X} Page: {:04X} RGB24: {:06X}\n
-            ({}, {}) UV ({}, {})\n
-            ({}, {}) UV ({}, {})\n
-            ({}, {}) UV ({}, {})\n
-            ({}, {}) UV ({}, {})\n",
-            CLUT, page, color,
-            points.get(0).unwrap().0, points.get(0).unwrap().1, tex_coords.get(0).unwrap().0, tex_coords.get(0).unwrap().1,
-            points.get(1).unwrap().0, points.get(1).unwrap().1, tex_coords.get(1).unwrap().0, tex_coords.get(1).unwrap().1,
-            points.get(2).unwrap().0, points.get(2).unwrap().1, tex_coords.get(2).unwrap().0, tex_coords.get(2).unwrap().1,
-            points.get(3).unwrap().0, points.get(3).unwrap().1, tex_coords.get(3).unwrap().0, tex_coords.get(3).unwrap().1,
-        );
-        
-        self.remaining_words = None;
-    }
-
-    fn draw_textured_gouraud_quad(&mut self, command: u32) {
-        let mut points: Vec<(u32, u32)> = Vec::new();
-        let mut colors: Vec<u32> = Vec::new();
-        let mut tex_coords: Vec<(u32, u32)> = Vec::new();
-        let mut CLUT = 0;
-        let mut page = 0;
-
-        self.command_buffer.push_front(command);
-        self.command_buffer
-            .drain(..)
-            .enumerate()
-            .for_each(|(i, w)| {
-                if i == 2 {
-                    CLUT = w >> 16;
-                } else if i == 5 {
-                    page = w >> 16;
-                }
-
-                match i % 3 {
-                    0 => colors.push(w & 0x00FF_FFFF),
-                    1 => points.push(((w >> 16), (w & 0x0000_FFFF))),
-                    2 => tex_coords.push((((w >> 8) & 0xF), w & 0xF)),
-                    _ => unsafe { unreachable_unchecked() }
-                }
-            });
-
-        println!(
-            "Textured Gouraud Quad: CLUT: {:04X} Page: {:04X}\n
-            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
-            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
-            ({}, {}) UV ({}, {}) RGB24: {:06X}\n
-            ({}, {}) UV ({}, {}) RGB24: {:06X}\n",
-            CLUT, page,
-            points.get(0).unwrap().0, points.get(0).unwrap().1, tex_coords.get(0).unwrap().0, tex_coords.get(0).unwrap().1, colors.get(0).unwrap(),
-            points.get(1).unwrap().0, points.get(1).unwrap().1, tex_coords.get(1).unwrap().0, tex_coords.get(1).unwrap().1, colors.get(1).unwrap(),
-            points.get(2).unwrap().0, points.get(2).unwrap().1, tex_coords.get(2).unwrap().0, tex_coords.get(2).unwrap().1, colors.get(2).unwrap(),
-            points.get(3).unwrap().0, points.get(3).unwrap().1, tex_coords.get(3).unwrap().0, tex_coords.get(3).unwrap().1, colors.get(3).unwrap(),
-        );
-        
-        self.remaining_words = None;
-    }
-
-    fn draw_gouraud_tri(&mut self, command: u32) {
-        let mut points: Vec<(u32, u32)> = Vec::new();
-        let mut colors: Vec<u32> = Vec::new();
-
-        self.command_buffer.push_front(command);
-        self.command_buffer
-            .drain(..)
-            .enumerate()
-            .for_each(|(i, w)| {
-                if i & 1 != 0 {
-                    points.push(((w >> 16), (w & 0x0000_FFFF)));
-                } else {
-                    colors.push(w & 0x00FF_FFFF);
-                }
-            });
-
-        println!(
-            "Gouraud Tri: ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X}",
-            points.get(0).unwrap().0, points.get(0).unwrap().1, colors.get(0).unwrap(),
-            points.get(1).unwrap().0, points.get(1).unwrap().1, colors.get(1).unwrap(),
-            points.get(2).unwrap().0, points.get(2).unwrap().1, colors.get(2).unwrap(),
-        );
-        
-        self.remaining_words = None;
-    }
-
-    fn draw_gouraud_quad(&mut self, command: u32) {
-        let mut points: Vec<(u32, u32)> = Vec::new();
-        let mut colors: Vec<u32> = Vec::new();
-
-        self.command_buffer.push_front(command);
-        self.command_buffer
-            .drain(..)
-            .enumerate()
-            .for_each(|(i, w)| {
-                if i & 1 != 0 {
-                    points.push(((w >> 16), (w & 0x0000_FFFF)));
-                } else {
-                    colors.push(w & 0x00FF_FFFF);
-                }
-            });
-
-        println!(
-            "Gouraud Quad: ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X} ({}, {}) RGB24: {:06X}",
-            points.get(0).unwrap().0, points.get(0).unwrap().1, colors.get(0).unwrap(),
-            points.get(1).unwrap().0, points.get(1).unwrap().1, colors.get(1).unwrap(),
-            points.get(2).unwrap().0, points.get(2).unwrap().1, colors.get(2).unwrap(),
-            points.get(3).unwrap().0, points.get(3).unwrap().1, colors.get(3).unwrap(),
-        );
-        
-        self.remaining_words = None;
-    }
-
-    fn begin_image_load(&mut self) {
-        let dest_coord = self.command_buffer.pop_front().unwrap();
-        let resolution = self.command_buffer.pop_front().unwrap();
-
-        let width = resolution & 0xFFFF;
-        let height = resolution >> 16;
-
-        let data_size = ((width * height) + 1) & !1;
-        self.remaining_words = Some((data_size >> 1) as usize - 1);
-
-        let x_pos = dest_coord & 0x03FF;
-        let y_pos = (dest_coord >> 16) & 0x01FF;
-
-        self.blit_address = Some((y_pos << 10) | x_pos);
-
-        self.gp0_mode = GP0_Mode::ImageLoad
-    }
-
-    fn begin_image_store(&mut self) {
-        let dest_coord = self.command_buffer.pop_front().unwrap();
-        let resolution = self.command_buffer.pop_front().unwrap();
-
-        let width = resolution & 0xFFFF;
-        let height = resolution >> 16;
-
-        let data_size = ((width * height) + 1) & !1;
-        self.cpu_blit_words = Some((data_size >> 1) as usize - 1);
-
-        let x_pos = dest_coord & 0x03FF;
-        let y_pos = (dest_coord >> 16) & 0x01FF;
-
-        self.cpu_blit_address = Some((y_pos << 10) | x_pos);
-
-        self.cpu_blit = true;
-    }
-
-    fn draw_mode_setting(&mut self, command: u32) {
-        self.gpu_status.set_texture_page_x_base((command & 0xF) as u8);
-        self.gpu_status.set_texture_page_y_base_1(((command >> 4) & 1) as u8);
-        self.gpu_status.set_semi_transparency(((command >> 5) & 3) as u8);
-        self.gpu_status.set_texture_page_colors(((command >> 7) & 3) as u8);
-        self.gpu_status.set_dither_24bit_to_15bit(((command >> 9) & 1) as u8);
-        self.gpu_status.set_drawing_to_display_area(((command >> 10) & 1) as u8);
-        self.gpu_status.set_texture_page_y_base_2(((command >> 11) & 1) as u8);
-        self.textured_rectangle_x_flip = ((command >> 12) & 1) != 0;
-        self.textured_rectangle_y_flip = ((command >> 13) & 1) != 0;
-        
-        self.remaining_words = None;
-    }
-
-    fn texture_window_setting(&mut self, command: u32) {
-        self.texture_window_mask_x = command & 0x1F;
-        self.texture_window_mask_y = (command >> 5) & 0x1F;
-        self.texture_window_offset_x = (command >> 10) & 0x1F;
-        self.texture_window_offset_y = (command >> 15) & 0x1F;
-        
-        self.remaining_words = None;
-    }
-
-    fn drawing_area_top_left(&mut self, command: u32) {
-        self.x1 = command & 0x0000_03FF;
-        self.y1 = (command >> 10) & 0x0000_01FF;
-        
-        self.remaining_words = None;
-    }
-
-    fn drawing_area_bottom_right(&mut self, command: u32) {
-        self.x2 = command & 0x0000_03FF;
-        self.y2 = (command >> 10) & 0x0000_01FF;
-        
-        self.remaining_words = None;
-    }
-
-    fn drawing_offset(&mut self, command: u32) {
-        self.x_offset = command & 0x0000_07FF;
-        self.y_offset = (command >> 11) & 0x0000_07FF;
-        
-        self.remaining_words = None;
-    }
-
-    fn mask_bit_setting(&mut self, command: u32) {
-        self.gpu_status.set_set_mask_bit((command & 1) as u8);
-        self.gpu_status.set_check_mask(((command >> 1) & 1) as u8);
-        
-        self.remaining_words = None;
-    }
-
-    fn execute_gp1(&mut self, command: u32) {
-        let command = command & 0x3FFF_FFFF;
-        let command_number = command >> 24;
-        match command_number {
-            0x00 => self.reset_gpu(),
-            0x01 => self.reset_command_buffer(),
-            0x02 => self.acknowledge_gpu_interrupt(),
-            0x03 => self.display_enable(command),
-            0x04 => self.set_dma_direction(command),
-            0x05 => self.set_display_area_start(command),
-            0x06 => self.set_horizontal_display_range(command),
-            0x07 => self.set_vertical_display_range(command),
-            0x08 => self.set_display_mode(command),
-            _ => println!("Unsupported GP1 instruction {:02X}", command_number),
-        }
-    }
-
-    fn reset_gpu(&mut self) {
-        self.reset_command_buffer();
-        self.acknowledge_gpu_interrupt();
-        self.display_enable(1);
-        self.set_dma_direction(0);
-        self.set_display_area_start(0);
-        self.set_horizontal_display_range(0);
-        self.set_vertical_display_range(0);
-        self.set_display_mode(0);
-        self.draw_mode_setting(0);
-        self.texture_window_setting(0);
-        self.drawing_area_top_left(0);
-        self.drawing_area_bottom_right(0);
-        self.drawing_offset(0);
-        self.mask_bit_setting(0);
-    }
-
-    fn reset_command_buffer(&mut self) {
-        self.command_buffer.clear();
-    }
-
-    fn acknowledge_gpu_interrupt(&mut self) {
-        println!("IRQ1: GPU interrupt not implemented.")
-    }
-
-    fn display_enable(&mut self, command: u32) {
-        self.gpu_status.set_display_disable((command & 1) as u8);
-    }
-
-    fn set_dma_direction(&mut self, command: u32) {
-        self.gpu_status.set_dma_direction((command & 3) as u8);
-    }
-
-    fn set_display_area_start(&mut self, command: u32) {
-        self.display_area_start = command & 0x0007_FFFF;
-    }
-
-    fn set_horizontal_display_range(&mut self, command: u32) {
-        self.x1 = command & 0x0000_0FFF;
-        self.x2 = (command >> 12) & 0x0000_0FFF;
-    }
-
-    fn set_vertical_display_range(&mut self, command: u32) {
-        self.y1 = command & 0x0000_03FF;
-        self.y2 = (command >> 10) & 0x0000_03FF;
-    }
-
-    fn set_display_mode(&mut self, command: u32) {
-        self.gpu_status.set_horizontal_resolution_1((command & 3) as u8);
-        self.gpu_status.set_vertical_resolution(((command >> 2) & 1) as u8);
-        self.gpu_status.set_video_mode(((command >> 3) & 1) as u8);
-        self.gpu_status.set_display_area_color_depth(((command >> 4) & 1) as u8);
-        self.gpu_status.set_vertical_interlace(((command >> 5) & 1) as u8);
-        self.gpu_status.set_horizontal_resolution_2(((command >> 6) & 1) as u8);
-        self.gpu_status.set_flip_screen_horizontally(((command >> 7) & 1) as u8);
+        output
     }
 }
