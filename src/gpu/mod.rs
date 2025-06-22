@@ -2,7 +2,7 @@ use std::{collections::VecDeque, hint::unreachable_unchecked};
 
 use modular_bitfield::{bitfield, prelude::*};
 
-use crate::{gpu::primitives::color::Color, ram::RAM};
+use crate::{gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
 
 const VRAM_SIZE: usize = 1024 * 1024;
 
@@ -52,7 +52,7 @@ struct VramCopyFields {
 #[derive(PartialEq, Clone, Copy)]
 enum ParametrizedCommand {
     CPU_VRAM_Copy,
-    Flat_Polygon(u32),
+    Polygon(u32),
 }
 
 #[derive(PartialEq)]
@@ -71,6 +71,9 @@ pub struct GPU {
     gp0_mode: GP0_State,
     gp0_parameters: VecDeque<u32>,
 
+    drawing_area: (Vertex, Vertex),
+    drawing_offset: Vertex,
+
     cycles: usize,
 }
 
@@ -82,6 +85,9 @@ impl GPU {
             vram,
             gp0_mode: GP0_State::CommandStart,
             gp0_parameters: VecDeque::new(),
+
+            drawing_area: (Vertex::default(), Vertex::default()),
+            drawing_offset: Vertex::default(),
 
             cycles: 0,
         }
@@ -130,6 +136,9 @@ impl GPU {
                         GP0_State::CommandStart
                     }
                     0 | 7 => match word >> 24 {
+                        0xE3 => self.set_drawing_area_top_left(word),
+                        0xE4 => self.set_drawing_area_bottom_right(word),
+                        0xE5 => self.set_drawing_offset(word),
                         _ => {
                             println!("{word:08X}");
                             GP0_State::CommandStart
@@ -145,9 +154,11 @@ impl GPU {
                 if idx == expected {
                     match command {
                         ParametrizedCommand::CPU_VRAM_Copy => self.initialize_cpu_vram_copy(),
-                        ParametrizedCommand::Flat_Polygon(word) => {
+                        ParametrizedCommand::Polygon(word) => {
                             let polygon_type = (word >> 24) as u8; match polygon_type {
-                                0x28 => self.draw_flat_quad(word),
+                                0x28 => self.draw_monochrome_quad(word),
+                                0x30 => self.draw_gouraud_tri(word),
+                                0x38 => self.draw_gouraud_quad(word),
                                 _ => {
                                     println!("Polygon command not implemented: {word:08X}");
                                     GP0_State::CommandStart
@@ -174,14 +185,137 @@ impl GPU {
         GP0_State::ReceivingParameters {
             idx: 1,
             expected: (vertices + color_words + texture_words) as usize,
-            command: ParametrizedCommand::Flat_Polygon(word)
+            command: ParametrizedCommand::Polygon(word)
         }
     }
 
-    fn draw_flat_quad(&mut self, word: u32) -> GP0_State {
+    fn draw_monochrome_quad(&mut self, word: u32) -> GP0_State {
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v3: Vertex = self.gp0_parameters.pop_front().unwrap().into();
 
+        self.write_monochrome_tri(v0, v1, v2, word);
+        self.write_monochrome_tri(v1, v2, v3, word);
 
         GP0_State::CommandStart
+    }
+
+    fn draw_gouraud_tri(&mut self, word: u32) -> GP0_State {
+        let c0: Color = Color::compress_color_depth(word).into();
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c1: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c2: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_gouraud_tri(v0, v1, v2, c0, c1, c2);
+
+        GP0_State::CommandStart
+    }
+
+    fn draw_gouraud_quad(&mut self, word: u32) -> GP0_State {
+        let c0: Color = Color::compress_color_depth(word).into();
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c1: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c2: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c3: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v3: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_gouraud_tri(v0, v1, v2, c0, c1, c2);
+        self.write_gouraud_tri(v1, v2, v3, c1, c2, c3);
+
+        GP0_State::CommandStart
+    }
+
+    fn set_drawing_area_top_left(&mut self, word: u32) -> GP0_State {
+        let x = (word & 0x3FF) as i32;
+        let y = ((word >> 10) & 0x1FF) as i32;
+
+        self.drawing_area.0 = Vertex {x, y};
+
+        GP0_State::CommandStart
+    }
+
+    fn set_drawing_area_bottom_right(&mut self, word: u32) -> GP0_State {
+        let x = (word & 0x3FF) as i32;
+        let y = ((word >> 10) & 0x1FF) as i32;
+
+        self.drawing_area.1 = Vertex {x, y};
+
+        GP0_State::CommandStart
+    }
+
+    fn set_drawing_offset(&mut self, word: u32) -> GP0_State {
+        let mut x = word & 0x7FF;
+        let mut y = (word >> 11) & 0x7FF;
+
+        if x & (1 << 10) != 0 {x |= 0xFFFF_F800}
+        if y & (1 << 10) != 0 {y |= 0xFFFF_F800}
+        
+        self.drawing_offset = Vertex {x: x as i32, y: y as i32};
+
+        GP0_State::CommandStart
+    }
+
+    fn write_monochrome_tri(&mut self, v0: Vertex, v1: Vertex, v2: Vertex, color: u32) {
+        let mut v0 = v0;
+        let mut v1 = v1;
+
+        Vertex::ensure_vertex_order(&mut v0, &mut v1, v2);
+
+        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+
+        for x in min_x..max_x {
+            for y in min_y..max_y {
+                let pixel = Vertex {x, y};
+                if pixel.is_inside_triangle(v0, v1, v2) {
+                    let coords = pixel.translate(self.drawing_offset).into();
+
+                    self.draw_pixel(color, coords);
+                }
+            }
+        }
+    }
+
+    fn write_gouraud_tri(&mut self, v0: Vertex, v1: Vertex, v2: Vertex, c0: Color, c1: Color, c2: Color) {
+        let mut v0 = v0;
+        let mut v1 = v1;
+
+        let mut c0 = c0;
+        let mut c1 = c1;
+        
+        if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
+            std::mem::swap(&mut c0, &mut c1);
+        }
+
+        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+
+        for x in min_x..max_x {
+            for y in min_y..max_y {
+                let pixel = Vertex {x, y};
+                if pixel.is_inside_triangle(v0, v1, v2) {
+                    let coords = pixel.translate(self.drawing_offset).into();
+                    let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                    let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel).into();
+
+                    self.draw_pixel(color, coords);
+                }
+            }
+        }
+    }
+
+    fn draw_pixel(&mut self, color: u32, coords: u32) {
+        let color_halfword = Color::compress_color_depth(color);
+        
+        let x = coords & 0x3FF;
+        let y = (coords >> 16) & 0x1FF;
+
+        let vram_addr = 2 * (1024 * y + x);
+        
+        self.vram.write16(vram_addr, color_halfword);
     }
 
     pub fn write_gp1(&mut self, word: u32) {
@@ -191,8 +325,6 @@ impl GPU {
     fn initialize_cpu_vram_copy(&mut self) -> GP0_State {
         let coords = self.gp0_parameters.pop_front().unwrap();
         let size = self.gp0_parameters.pop_front().unwrap();
-
-        println!("size: {size:08X}, coords: {coords:08X}");
 
         let vram_x = (coords & 0x3FF) as u16;
         let vram_y = ((coords >> 16) & 0x1FF) as u16;
@@ -224,7 +356,6 @@ impl GPU {
 
             let vram_addr = 2 * (1024 * vram_row + vram_col);
 
-            println!("[{vram_addr:08X}] <- {halfword:04X}");
             self.vram.write16(vram_addr, halfword);
 
             fields.current_col += 1;
@@ -239,17 +370,6 @@ impl GPU {
         }
 
         GP0_State::ReceivingData(fields)
-    }
-
-    fn draw_pixel(&mut self, color: u32, coords: u32) {
-        let color_halfword: u16 = Color::from(color).into();
-        
-        let x = coords & 0x3FF;
-        let y = (coords >> 16) & 0x1FF;
-
-        let vram_addr = 2 * (1024 * y + x);
-        
-        self.vram.write16(vram_addr, color_halfword);
     }
 
     pub fn render_vram(&self) -> Box<[Color; 512 * 1024]> {
