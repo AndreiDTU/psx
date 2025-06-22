@@ -106,34 +106,37 @@ impl GPU {
     }
 
     pub fn write_gp0(&mut self, word: u32) {
-        if self.gp0_mode == GP0_State::CommandStart {println!("GP0 {word:08X}")}
+        println!("GP0 {word:08X}");
         self.gp0_mode = match self.gp0_mode {
-            GP0_State::CommandStart => match word >> 29 {
-                1 => self.set_polygon_state(word),
-                2 => {
-                    println!("draw line {word:08X}");
-                    GP0_State::CommandStart
-                }
-                3 => {
-                    println!("draw rectangle {word:08X}");
-                    GP0_State::CommandStart
-                }
-                4 => {
-                    println!("VRAM-to-VRAM copy {word:08X}");
-                    GP0_State::CommandStart
-                }
-                5 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::CPU_VRAM_Copy},
-                6 => {
-                    println!("VRAM-to-CPU copy {word:08X}");
-                    GP0_State::CommandStart
-                }
-                0 | 7 => match word >> 24 {
-                    _ => {
-                        println!("{word:08X}");
+            GP0_State::CommandStart => {
+                self.gp0_parameters.clear();
+                match word >> 29 {
+                    1 => self.set_polygon_state(word),
+                    2 => {
+                        println!("draw line {word:08X}");
                         GP0_State::CommandStart
                     }
+                    3 => {
+                        println!("draw rectangle {word:08X}");
+                        GP0_State::CommandStart
+                    }
+                    4 => {
+                        println!("VRAM-to-VRAM copy {word:08X}");
+                        GP0_State::CommandStart
+                    }
+                    5 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::CPU_VRAM_Copy},
+                    6 => {
+                        println!("VRAM-to-CPU copy {word:08X}");
+                        GP0_State::CommandStart
+                    }
+                    0 | 7 => match word >> 24 {
+                        _ => {
+                            println!("{word:08X}");
+                            GP0_State::CommandStart
+                        }
+                    }
+                    _ => unsafe { unreachable_unchecked() }
                 }
-                _ => unsafe { unreachable_unchecked() }
             }
 
             GP0_State::ReceivingParameters {idx, expected, command} => {
@@ -186,7 +189,10 @@ impl GPU {
     }
 
     fn initialize_cpu_vram_copy(&mut self) -> GP0_State {
-        let (size, coords) = (self.gp0_parameters.pop_front().unwrap(), self.gp0_parameters.pop_front().unwrap());
+        let coords = self.gp0_parameters.pop_front().unwrap();
+        let size = self.gp0_parameters.pop_front().unwrap();
+
+        println!("size: {size:08X}, coords: {coords:08X}");
 
         let vram_x = (coords & 0x3FF) as u16;
         let vram_y = ((coords >> 16) & 0x1FF) as u16;
@@ -194,7 +200,7 @@ impl GPU {
         let mut width = (size & 0x3FF) as u16;
         if width == 0 {width = 1024}
 
-        let mut height = ((size >> 16) & 0x3FF) as u16;
+        let mut height = ((size >> 16) & 0x1FF) as u16;
         if height == 0 {height = 512}
 
         GP0_State::ReceivingData(
