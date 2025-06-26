@@ -2,7 +2,7 @@ use std::{collections::VecDeque, hint::unreachable_unchecked};
 
 use modular_bitfield::{bitfield, prelude::*};
 
-use crate::{gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
+use crate::{gpu::primitives::{color::Color, interpolate_uv_coords, vertex::Vertex}, ram::RAM};
 
 const VRAM_SIZE: usize = 1024 * 1024;
 
@@ -157,6 +157,7 @@ impl GPU {
                         ParametrizedCommand::Polygon(word) => {
                             let polygon_type = (word >> 24) as u8; match polygon_type {
                                 0x28 => self.draw_monochrome_quad(word),
+                                0x2C => self.draw_modulated_quad(word),
                                 0x30 => self.draw_gouraud_tri(word),
                                 0x38 => self.draw_gouraud_quad(word),
                                 _ => {
@@ -197,6 +198,30 @@ impl GPU {
 
         self.write_monochrome_tri(v0, v1, v2, word);
         self.write_monochrome_tri(v1, v2, v3, word);
+
+        GP0_State::CommandStart
+    }
+
+    fn draw_modulated_quad(&mut self, word: u32) -> GP0_State {
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let t0 = self.gp0_parameters.pop_front().unwrap();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let t1 = self.gp0_parameters.pop_front().unwrap();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let t2 = self.gp0_parameters.pop_front().unwrap();
+        let v3: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let t3 = self.gp0_parameters.pop_front().unwrap();
+
+        let clut = t0 >> 16;
+        let page = t1 >> 16;
+
+        let uv0 = (t0 & 0xFF, (t0 >> 8) & 0xFF);
+        let uv1 = (t1 & 0xFF, (t1 >> 8) & 0xFF);
+        let uv2 = (t2 & 0xFF, (t2 >> 8) & 0xFF);
+        let uv3 = (t3 & 0xFF, (t3 >> 8) & 0xFF);
+
+        self.write_modulated_tri(v0, v1, v2, word, uv0, uv1, uv2, clut, page);
+        self.write_modulated_tri(v1, v2, v3, word, uv1, uv2, uv3, clut, page);
 
         GP0_State::CommandStart
     }
@@ -307,6 +332,88 @@ impl GPU {
         }
     }
 
+    fn write_modulated_tri(
+        &mut self, 
+        v0: Vertex,
+        v1: Vertex,
+        v2: Vertex,
+        color: u32, 
+        uv0: (u32, u32),
+        uv1: (u32, u32),
+        uv2: (u32, u32),
+        clut: u32,
+        page: u32,
+    ) {
+        let base_x = (page & 0xF) * 64;
+        let base_y = ((page >> 4) & 1) * 256;
+        let semi_transparency = (page >> 5) & 3;
+        let tex_page_color_depth = (page >> 7) & 3;
+
+        let clut_x = clut & 0x3F;
+        let clut_y = (clut >> 6) & 0x1FF;
+
+        let clut_addr = ((clut_y << 10) | (clut_x << 4)) << 1;
+
+        let mut v0 = v0;
+        let mut v1 = v1;
+
+        let mut uv0 = uv0;
+        let mut uv1 = uv1;
+        let mut uv2 = uv2;
+
+        if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
+            std::mem::swap(&mut uv0, &mut uv1);
+        }
+
+        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
+        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
+        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
+
+        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+
+        for y in min_y..max_y {
+            match tex_page_color_depth {
+                0 => {
+                    for x in (min_x..max_x).step_by(4) {
+                        let pixel = Vertex {x, y};
+                        if pixel.is_inside_triangle(v0, v1, v2) {
+                            let pixel = pixel.translate(self.drawing_offset);
+
+                            let tex_pixel = Vertex { x: min_x + ((x - min_x) >> 2), y: y};
+
+                            let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
+                            let tex_color = self.vram.read16(2 * (1024 * uv.1 + uv.0));
+
+                            let px_idx = [
+                                tex_color,
+                                tex_color >> 4,
+                                tex_color >> 8,
+                                tex_color >> 12,
+                            ].map(|idx| {idx & 0xF});
+
+                            let color = px_idx.map(|idx| {self.vram.read16(clut_addr + ((idx as u32) << 1))});
+                            
+                            color.iter()
+                                .enumerate()
+                                .for_each(|(i, color)| {
+                                    if *color != 0 {
+                                        let pixel = Vertex { x: pixel.x + i as i32, y: pixel.y };
+                                        let coords: u32 = pixel.into();
+                                        self.draw_pixel_compressed(*color, coords);
+                                    }
+                                });
+                        }
+                    }
+                }
+                1 => todo!(),
+                2 => todo!(),
+                3 => panic!("Reserved color depth"),
+                _ => unsafe { unreachable_unchecked() }
+            };
+        }
+    }
+
     fn draw_pixel(&mut self, color: u32, coords: u32) {
         let color_halfword = Color::compress_color_depth(color);
         
@@ -316,6 +423,15 @@ impl GPU {
         let vram_addr = 2 * (1024 * y + x);
         
         self.vram.write16(vram_addr, color_halfword);
+    }
+
+    fn draw_pixel_compressed(&mut self, color: u16, coords: u32) {
+        let x = coords & 0x3FF;
+        let y = (coords >> 16) & 0x1FF;
+
+        let vram_addr = 2 * (1024 * y + x);
+        
+        self.vram.write16(vram_addr, color);
     }
 
     pub fn write_gp1(&mut self, word: u32) {
