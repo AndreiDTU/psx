@@ -92,7 +92,7 @@ impl GPU {
             fields.current_row += 1;
 
             if fields.current_row == fields.height {
-                self.gpu_read_transfer = Some(GP0_State::CommandStart);
+                self.gpu_read_transfer = None;
                 return;
             }
         }
