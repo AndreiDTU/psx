@@ -1,8 +1,6 @@
-use std::{cell::RefCell, path::Path, rc::Weak, sync::{Arc, Mutex}};
+use std::{cell::RefCell, path::Path, rc::Weak};
 
-use winit::event_loop::EventLoopProxy;
-
-use crate::{bios::BIOS, bus::dma::DMA, gpu::GPU, ram::RAM, render::primitives::Tri};
+use crate::{bios::BIOS, bus::dma::DMA, gpu::GPU, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -42,11 +40,11 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn new(path: &Path, tris: Arc<Mutex<Vec<Tri>>>, display_range: Arc<Mutex<((u32, u32), (u32, u32))>>, proxy: EventLoopProxy<()>) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
-        let gpu = GPU::new(tris, display_range, proxy);
+        let gpu = GPU::new();
 
         Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu })
     }
