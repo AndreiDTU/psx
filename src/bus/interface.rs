@@ -90,6 +90,7 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read8(addr - SCRATCHPAD_START),
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
+            IO_START..IO_END => 0,
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -136,6 +137,7 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.write8(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
             EXPANSION_2_START..EXPANSION_2_END => {}
+            IO_START..IO_END => {}
             _ => panic!("Write 8-bit access at unmapped address: {:08X}", addr),
         }
     }
