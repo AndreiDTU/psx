@@ -4,7 +4,7 @@ use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc};
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cpu::CPU};
 
 pub mod bus;
 pub mod bios;
@@ -16,8 +16,8 @@ const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
-    // let exe = exe_binding.as_slice();
+    let exe_binding = std::fs::read("ImageLoad.exe").unwrap();
+    let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -31,15 +31,18 @@ fn main() -> Result<(), anyhow::Error> {
     let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, VRAM_WIDTH, VRAM_HEIGHT)?;
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"))?));
+    let interrupt = Rc::new(RefCell::new(Interrupt::default()));
+    let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt)?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);
     let mut cpu = CPU::new(interface.clone(), dma_running.clone());
 
     loop {
-        // sideload_exe(&mut cpu, interface.clone(), exe);
+        sideload_exe(&mut cpu, interface.clone(), exe);
         cpu.tick();
+        timer.borrow_mut().tick();
         dma.borrow_mut().tick();
         if interface.borrow_mut().gpu.tick() {
             let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();

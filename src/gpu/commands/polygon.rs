@@ -141,8 +141,8 @@ impl GPU {
         clut: u32,
         page: u32,
     ) {
-        let base_x = (page & 0xF) * 64;
-        let base_y = ((page >> 4) & 1) * 256;
+        let base_x = (page & 0xF) << 6;
+        let base_y = ((page >> 4) & 1) << 8;
         let semi_transparency = (page >> 5) & 3;
         let tex_page_color_depth = (page >> 7) & 3;
 
@@ -180,7 +180,7 @@ impl GPU {
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
                             let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(2 * (1024 * uv.1 + uv.0));
+                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
 
                             let px_idx = [
                                 tex_color,

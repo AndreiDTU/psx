@@ -1,6 +1,6 @@
-use std::{cell::RefCell, path::Path, rc::Weak};
+use std::{cell::RefCell, path::Path, rc::{Rc, Weak}};
 
-use crate::{bios::BIOS, bus::dma::DMA, gpu::GPU, ram::RAM};
+use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, gpu::GPU, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -13,14 +13,32 @@ const SCRATCHPAD_SIZE: usize = 0x400;
 const SCRATCHPAD_START: u32 = 0x1F80_0000;
 const SCRATCHPAD_END: u32 = SCRATCHPAD_START + SCRATCHPAD_SIZE as u32;
 
-const IO_START: u32 = 0x1F801000;
-const IO_END: u32 = IO_START + (4 * 1024);
+const MEM_CTRL_START: u32 = 0x1F80_1000;
+const MEM_CTRL_END: u32 = MEM_CTRL_START + 0x24;
+
+const MEM_CTRL_2_START: u32 = 0x1F80_1060;
+const MEM_CTRL_2_END: u32 = MEM_CTRL_2_START + 4;
+
+const IQR_START: u32 = 0x1F80_1070;
+const IRQ_END: u32 = IQR_START + 8;
 
 const DMA_START: u32 = 0x1F801080;
 const DMA_END: u32 = DMA_START + 0x80;
 
+const TIMER_START: u32 = 0x1F801100;
+const TIMER_END: u32 = TIMER_START + 0x30;
+
 const GPU_START: u32 = 0x1F801810;
 const GPU_END: u32 = GPU_START + 8;
+
+const VOICE_START: u32 = 0x1F801C00;
+const VOICE_END: u32 = VOICE_START + 24 * 0x10;
+
+const SPU_START: u32 = 0x1F801D80;
+const SPU_END: u32 = SPU_START + 0x40;
+
+const REVERB_START: u32 = 0x1F801DC0;
+const REVERB_END: u32 = REVERB_START + 0x40;
 
 const EXPANSION_2_START: u32 = 0x1F802000;
 const EXPANSION_2_END: u32 = EXPANSION_2_START + 66;
@@ -37,16 +55,19 @@ pub struct Interface {
     pub dram: RAM,
     pub scratchpad: RAM,
     pub gpu: GPU,
+    interrupt: Rc<RefCell<Interrupt>>,
+    timer: Rc<RefCell<Timer>>,
 }
 
 impl Interface {
-    pub fn new(path: &Path) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
-        let gpu = GPU::new();
+        let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
+        let gpu = GPU::new(interrupt.clone(), timer.clone());
 
-        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu })
+        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer })
     }
 
     pub fn read32(&mut self, addr: u32) -> u32 {
@@ -57,6 +78,17 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
+            MEM_CTRL_START..MEM_CTRL_END => 0,
+            MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
+            TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
+            IQR_START..IRQ_END => {
+                let offset = addr - IQR_START;
+                match offset {
+                    0 => self.interrupt.borrow_mut().read_status32(),
+                    4 => self.interrupt.borrow_mut().read_mask32(),
+                    _ => unreachable!(),
+                }
+            }
             DMA_START..DMA_END => self.dma.upgrade().unwrap().borrow().read_register(addr - DMA_START),
             GPU_START..GPU_END => {
                 let offset = addr - GPU_START;
@@ -66,20 +98,35 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            IO_START..IO_END => 0,
+            VOICE_START..VOICE_END => 0,
+            SPU_START..SPU_END => 0,
+            REVERB_START..REVERB_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
     }
 
-    pub fn read16(&self, addr: u32) -> u16 {
+    pub fn read16(&mut self, addr: u32) -> u16 {
         if addr & 0b1 != 0 {panic!("Unaligned read at {:08X}", addr)}
         
         let addr = mask_region(addr);
         match addr {
             DRAM_START..DRAM_END => self.dram.read16(addr - DRAM_START),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read16(addr - SCRATCHPAD_START),
-            IO_START..IO_END => 0,
-            _ => panic!("Read access at unmapped address: {:08X}", addr),
+            MEM_CTRL_START..MEM_CTRL_END => 0,
+            MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
+            TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
+            IQR_START..IRQ_END => {
+                let offset = addr - IQR_START;
+                match offset {
+                    0 => self.interrupt.borrow_mut().read_status16(),
+                    4 => self.interrupt.borrow_mut().read_mask16(),
+                    _ => unreachable!(),
+                }
+            }
+            VOICE_START..VOICE_END => 0,
+            SPU_START..SPU_END => 0,
+            REVERB_START..REVERB_END => 0,
+            _ => panic!("Read 16-bit access at unmapped address: {:08X}", addr),
         }
     }
 
@@ -90,7 +137,11 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read8(addr - SCRATCHPAD_START),
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
-            IO_START..IO_END => 0,
+            MEM_CTRL_START..MEM_CTRL_END => 0,
+            MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
+            VOICE_START..VOICE_END => 0,
+            SPU_START..SPU_END => 0,
+            REVERB_START..REVERB_END => 0,
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -102,6 +153,17 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write32(addr - SCRATCHPAD_START, value),
+            MEM_CTRL_START..MEM_CTRL_END => {},
+            MEM_CTRL_2_START..MEM_CTRL_2_END => {},
+            TIMER_START..TIMER_END => self.timer.borrow_mut().write32(addr - TIMER_START, value),
+            IQR_START..IRQ_END => {
+                let offset = addr - IQR_START;
+                match offset {
+                    0 => self.interrupt.borrow_mut().acknowledge32(value),
+                    4 => self.interrupt.borrow_mut().write_mask32(value),
+                    _ => unreachable!(),
+                }
+            }
             DMA_START..DMA_END => self.dma.upgrade().unwrap().borrow_mut().write_register(addr - DMA_START, value),
             GPU_START..GPU_END => {
                 let offset = addr - GPU_START;
@@ -111,7 +173,9 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            IO_START..IO_END => {}
+            VOICE_START..VOICE_END => {},
+            SPU_START..SPU_END => {},
+            REVERB_START..REVERB_END => {},
             CACHE_CONTROL..CACHE_CONTROL_END => {
                 // println!("Write to CACHE_CONTROL")
             }
@@ -126,7 +190,20 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.write16(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write16(addr - SCRATCHPAD_START, value),
-            IO_START..IO_END => {}
+            MEM_CTRL_START..MEM_CTRL_END => {},
+            MEM_CTRL_2_START..MEM_CTRL_2_END => {},
+            TIMER_START..TIMER_END => self.timer.borrow_mut().write16(addr - TIMER_START, value),
+            IQR_START..IRQ_END => {
+                let offset = addr - IQR_START;
+                match offset {
+                    0 => self.interrupt.borrow_mut().acknowledge16(value),
+                    4 => self.interrupt.borrow_mut().write_mask16(value),
+                    _ => unreachable!(),
+                }
+            }
+            VOICE_START..VOICE_END => {},
+            SPU_START..SPU_END => {},
+            REVERB_START..REVERB_END => {},
             _ => panic!("Write 16-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -136,8 +213,12 @@ impl Interface {
         match addr {
             DRAM_START..DRAM_END => self.dram.write8(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
+            MEM_CTRL_START..MEM_CTRL_END => {},
+            MEM_CTRL_2_START..MEM_CTRL_2_END => {},
+            VOICE_START..VOICE_END => {},
+            SPU_START..SPU_END => {},
+            REVERB_START..REVERB_END => {},
             EXPANSION_2_START..EXPANSION_2_END => {}
-            IO_START..IO_END => {}
             _ => panic!("Write 8-bit access at unmapped address: {:08X}", addr),
         }
     }

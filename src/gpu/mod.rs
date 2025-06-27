@@ -1,8 +1,8 @@
-use std::{collections::VecDeque, hint::unreachable_unchecked};
+use std::{cell::RefCell, collections::VecDeque, hint::unreachable_unchecked, rc::{Rc, Weak}};
 
 use modular_bitfield::{bitfield, prelude::*};
 
-use crate::{gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
+use crate::{bus::{interface::Interface, interrupt::Interrupt, timer::Timer}, gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
 
 const VRAM_SIZE: usize = 1024 * 1024;
 
@@ -86,12 +86,15 @@ pub struct GPU {
 
     tex_window: u32,
 
-    cycles: usize,
+    cycle: usize,
     even_odd_frame: bool,
+
+    interface: Rc<RefCell<Interrupt>>,
+    timer: Rc<RefCell<Timer>>,
 }
 
 impl GPU {
-    pub fn new() -> Self {
+    pub fn new(interface: Rc<RefCell<Interrupt>>, timer: Rc<RefCell<Timer>>) -> Self {
         let vram = RAM::new(VRAM_SIZE);
 
         Self {
@@ -111,15 +114,18 @@ impl GPU {
 
             tex_window: 0,
 
-            cycles: 0,
+            cycle: 0,
             even_odd_frame: false,
+
+            interface,
+            timer,
         }
     }
 
     pub fn tick(&mut self) -> bool {
-        self.cycles += 1;
-        if self.cycles == 564_480 {
-            self.cycles = 0;
+        self.cycle += 1;
+        if self.cycle == 564_480 {
+            self.cycle = 0;
 
             self.even_odd_frame = !self.even_odd_frame;
 
@@ -165,6 +171,7 @@ impl GPU {
                     6 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::VRAM_CPU_Copy},
                     0 | 7 => match word >> 24 {
                         0x00 => GP0_State::CommandStart,
+                        0x1F => self.irq(),
                         0xE1 => self.set_texpage(word),
                         0xE2 => self.set_tex_window(word),
                         0xE3 => self.set_drawing_area_top_left(word),
@@ -221,7 +228,7 @@ impl GPU {
         let x = coords & 0x3FF;
         let y = (coords >> 16) & 0x1FF;
 
-        let vram_addr = 2 * (1024 * y + x);
+        let vram_addr =((y << 10) + x) << 1;
         
         self.vram.write16(vram_addr, color_halfword);
     }
@@ -230,7 +237,7 @@ impl GPU {
         let x = coords & 0x3FF;
         let y = (coords >> 16) & 0x1FF;
 
-        let vram_addr = 2 * (1024 * y + x);
+        let vram_addr = ((y << 10) + x) << 1;
         
         self.vram.write16(vram_addr, color);
     }
@@ -239,10 +246,10 @@ impl GPU {
         let mut output = Box::new([Color::default(); 512 * 1024]);
         for y in 0..512 {
             for x in 0..1024 {
-                let vram_addr = (2 * (1024 * y + x)) as u32;
+                let vram_addr = (((y << 10) + x) << 1) as u32;
                 let pixel = self.vram.read16(vram_addr);
 
-                output[1024 * y + x] = Color::from(pixel);
+                output[(y << 10) + x] = Color::from(pixel);
             }
         }
 
