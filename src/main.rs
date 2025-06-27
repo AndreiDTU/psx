@@ -1,55 +1,62 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
-use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, sync::{Arc, Mutex}, thread};
+use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc};
 
-use winit::event_loop::EventLoop;
+use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU, render::{Renderer, State}};
+use crate::{bus::{dma::DMA, interface::Interface}, cpu::CPU};
 
 pub mod bus;
 pub mod bios;
 pub mod cpu;
 pub mod gpu;
 pub mod ram;
-pub mod render;
+
+const VRAM_WIDTH: u32 = 1024;
+const VRAM_HEIGHT: u32 = 512;
 
 fn main() -> Result<(), anyhow::Error> {
-    let tris = Arc::new(Mutex::new(Vec::new()));
-    let display_range = Arc::new(Mutex::new(((0, 0), (0, 0))));
-    let renderer = Renderer::new(tris.clone(), display_range.clone());
+    // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
+    // let exe = exe_binding.as_slice();
 
-    let event_loop = EventLoop::new()?;
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+    let window = video_subsystem
+        .window("PSX", VRAM_WIDTH, VRAM_HEIGHT)
+        .position_centered()
+        .build()?;
 
-    let proxy = event_loop.create_proxy();
+    let mut canvas = window.into_canvas().present_vsync().build().unwrap();
+    let creator = canvas.texture_creator();
+    let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, VRAM_WIDTH, VRAM_HEIGHT)?;
+    let mut event_pump = sdl_context.event_pump().unwrap();
 
-    thread::spawn(move || {
-        // let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
-        // let exe = exe_binding.as_slice();
-        
-        let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), tris, display_range, proxy).unwrap()));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"))?));
+    let dma_running = Rc::new(RefCell::new(false));
+    let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
+    interface.borrow_mut().dma = Rc::downgrade(&dma);
+    let mut cpu = CPU::new(interface.clone(), dma_running.clone());
 
-        let dma_running = Rc::new(RefCell::new(false));
-        let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
-        interface.borrow_mut().dma = Rc::downgrade(&dma);
-        let mut cpu = CPU::new(interface.clone(), dma_running.clone());
+    loop {
+        // sideload_exe(&mut cpu, interface.clone(), exe);
+        cpu.tick();
+        dma.borrow_mut().tick();
+        if interface.borrow_mut().gpu.tick() {
+            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
+            texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
 
-        loop {
-            // sideload_exe(&mut cpu, interface.clone(), exe);
-            cpu.tick();
-            dma.borrow_mut().tick();
-            interface.borrow_mut().gpu.tick();
+            canvas.clear();
+            canvas.copy(&texture, None, None).unwrap();
+            canvas.present();
+
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
+                    _ => {}
+                }
+            }
         }
-    });
-    
-    let mut state = State {
-        window: None,
-        renderer,
-        minimized: false,
-    };
-
-    event_loop.run_app(&mut state)?;
-
-    Ok(())
+    }
 }
 
 #[allow(unused)]
