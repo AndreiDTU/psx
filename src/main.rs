@@ -42,7 +42,7 @@ fn main() -> Result<(), anyhow::Error> {
         cpu.tick();
         dma.borrow_mut().tick();
         if interface.borrow_mut().gpu.tick() {
-            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| [color.r, color.g, color.b]).collect();
+            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
             texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
 
             canvas.clear();

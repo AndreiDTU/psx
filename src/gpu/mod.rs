@@ -259,7 +259,7 @@ impl GPU {
         let x = (word & 0x3FF) as i32;
         let y = ((word >> 10) & 0x1FF) as i32;
 
-        self.drawing_area.0 = Vertex {x, y};
+        self.drawing_area.0 = (x, y).into();
 
         GP0_State::CommandStart
     }
@@ -268,7 +268,7 @@ impl GPU {
         let x = (word & 0x3FF) as i32;
         let y = ((word >> 10) & 0x1FF) as i32;
 
-        self.drawing_area.1 = Vertex {x, y};
+        self.drawing_area.1 = (x, y).into();
 
         GP0_State::CommandStart
     }
@@ -280,7 +280,7 @@ impl GPU {
         if x & (1 << 10) != 0 {x |= 0xFFFF_F800}
         if y & (1 << 10) != 0 {y |= 0xFFFF_F800}
         
-        self.drawing_offset = Vertex {x: x as i32, y: y as i32};
+        self.drawing_offset = (x, y).into();
 
         GP0_State::CommandStart
     }
@@ -291,11 +291,11 @@ impl GPU {
 
         Vertex::ensure_vertex_order(&mut v0, &mut v1, v2);
 
-        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+        let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
         for x in min_x..max_x {
             for y in min_y..max_y {
-                let pixel = Vertex {x, y};
+                let pixel: Vertex = (x, y).into();
                 if pixel.is_inside_triangle(v0, v1, v2) {
                     let coords = pixel.translate(self.drawing_offset).into();
 
@@ -316,11 +316,11 @@ impl GPU {
             std::mem::swap(&mut c0, &mut c1);
         }
 
-        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+        let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
         for x in min_x..max_x {
             for y in min_y..max_y {
-                let pixel = Vertex {x, y};
+                let pixel: Vertex = (x, y).into();
                 if pixel.is_inside_triangle(v0, v1, v2) {
                     let coords = pixel.translate(self.drawing_offset).into();
                     let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
@@ -369,17 +369,17 @@ impl GPU {
         uv1 = (uv1.0 + base_x, uv1.1 + base_y);
         uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
-        let (min_x, max_x, min_y, max_y) = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1);
+        let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
         for y in min_y..max_y {
             match tex_page_color_depth {
                 0 => {
                     for x in (min_x..max_x).step_by(4) {
-                        let pixel = Vertex {x, y};
+                        let pixel: Vertex = (x, y).into();
                         if pixel.is_inside_triangle(v0, v1, v2) {
-                            let pixel = pixel.translate(self.drawing_offset);
+                            let [px, py] = pixel.translate(self.drawing_offset).coords.to_array();
 
-                            let tex_pixel = Vertex { x: min_x + ((x - min_x) >> 2), y: y};
+                            let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
                             let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
@@ -398,7 +398,7 @@ impl GPU {
                                 .enumerate()
                                 .for_each(|(i, color)| {
                                     if *color != 0 {
-                                        let pixel = Vertex { x: pixel.x + i as i32, y: pixel.y };
+                                        let pixel: Vertex = (px + i as i32, py).into();
                                         let coords: u32 = pixel.into();
                                         self.draw_pixel_compressed(*color, coords);
                                     }

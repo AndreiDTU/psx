@@ -1,10 +1,23 @@
-use std::cmp;
+use glam::{DVec3, IVec2, IVec4, Vec4Swizzles};
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Vertex {
-    pub x: i32,
-    pub y: i32,
+    pub coords: IVec2,
+}
+
+impl From<(i32, i32)> for Vertex {
+    fn from(value: (i32, i32)) -> Self {
+        Self { coords: IVec2::from(value) }
+    }
+}
+
+impl From<(u32, u32)> for Vertex {
+    fn from(value: (u32, u32)) -> Self {
+        let (x, y) = value;
+        let value = (x as i32, y as i32);
+        Self { coords: IVec2::from(value) }
+    }
 }
 
 impl From<u32> for Vertex {
@@ -16,15 +29,17 @@ impl From<u32> for Vertex {
         if x & (1 << 10) != 0 {x |= 0xFFFF_F800}
         if y & (1 << 10) != 0 {y |= 0xFFFF_F800}
 
-        Self { x: x as i32, y: y as i32 }
+        Self { coords: IVec2::from_array([x as i32, y as i32]) }
     }
 }
 
 impl From<Vertex> for u32 {
     #[inline]
     fn from(value: Vertex) -> Self {
-        let x = (value.x as u32) & 0x7FF;
-        let y = ((value.y as u32) & 0x7FF) << 16;
+        let [x, y] = value.coords.to_array();
+
+        let x = (x as u32) & 0x7FF;
+        let y = ((y as u32) & 0x7FF) << 16;
 
         y | x
     }
@@ -33,10 +48,7 @@ impl From<Vertex> for u32 {
 impl Vertex {
     #[inline]
     pub fn translate(&self, translation: Vertex) -> Vertex {
-        let x = self.x.wrapping_add(translation.x);
-        let y = self.y.wrapping_add(translation.y);
-
-        Vertex { x, y }
+        Vertex { coords: self.coords.wrapping_add(translation.coords) }
     }
 
     #[inline]
@@ -48,11 +60,11 @@ impl Vertex {
             }
 
             if z == 0 {
-                if vb.y > va.y {
+                if vb.coords.y > va.coords.y {
                     return false;
                 }
 
-                if vb.y == va.y && vb.x < va.x {
+                if vb.coords.y == va.coords.y && vb.coords.x < va.coords.x {
                     return false;
                 }
             }
@@ -62,10 +74,10 @@ impl Vertex {
     }
 
     #[inline]
-    pub fn compute_barycentric_coordinates(&self, v0: Vertex, v1: Vertex, v2: Vertex) -> [f64; 3] {
+    pub fn compute_barycentric_coordinates(&self, v0: Vertex, v1: Vertex, v2: Vertex) -> DVec3 {
         let denominator = Vertex::cross_product_z(v0, v1, v2);
         if denominator == 0 {
-            return [1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0];
+            return DVec3::from_array([1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0]);
         }
 
         let denominator: f64 = denominator.into();
@@ -75,12 +87,15 @@ impl Vertex {
 
         let lambda2 = 1.0 - lambda0 - lambda1;
 
-        [lambda0, lambda1, lambda2]
+        DVec3::from_array([lambda0, lambda1, lambda2])
     }
 
     #[inline(always)]
     fn cross_product_z(v0: Vertex, v1: Vertex, v2: Vertex) -> i32 {
-        (v1.x - v0.x) * (v2.y - v0.y) - (v1.y - v0.y) * (v2.x - v0.x)
+        let a = v1.coords - v0.coords;
+        let b = v2.coords - v0.coords;
+
+        a.x * b.y - a.y * b.x
     }
 
     #[inline]
@@ -95,21 +110,14 @@ impl Vertex {
     }
 
     #[inline]
-    pub fn triangle_bounding_box(v0: Vertex, v1: Vertex, v2: Vertex, drawing_area_top_left: Vertex, drawing_area_bottom_right: Vertex) -> (i32, i32, i32, i32) {
-        let mut min_x = cmp::min(v0.x, cmp::min(v1.x, v2.x));
-        let mut max_x = cmp::max(v0.x, cmp::max(v1.x, v2.x));
-        let mut min_y = cmp::min(v0.y, cmp::min(v1.y, v2.y));
-        let mut max_y = cmp::max(v0.y, cmp::max(v1.y, v2.y));
+    pub fn triangle_bounding_box(v0: Vertex, v1: Vertex, v2: Vertex, drawing_area_top_left: Vertex, drawing_area_bottom_right: Vertex) -> IVec4 {
+        let min = v0.coords.min(v1.coords.min(v2.coords)).max(drawing_area_top_left.coords);
+        let max = v0.coords.max(v1.coords.max(v2.coords)).min(drawing_area_bottom_right.coords);
 
-        min_x = cmp::max(min_x, drawing_area_top_left.x);
-        max_x = cmp::min(max_x, drawing_area_bottom_right.x);
-        min_y = cmp::max(min_y, drawing_area_top_left.y);
-        max_y = cmp::min(max_y, drawing_area_bottom_right.y);
-
-        if min_x > max_x || min_y > max_y {
-            return (0, 0, 0, 0);
+        if (min.cmpgt(max)).any() {
+            return IVec4::ZERO;
         }
 
-        return (min_x, max_x, min_y, max_y);
+        return IVec4::from((min, max)).xzyw();
     }
 }
