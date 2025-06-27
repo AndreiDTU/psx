@@ -17,6 +17,38 @@ impl GPU {
         }
     }
 
+    pub fn draw_monochrome_tri(&mut self, word: u32) -> GP0_State {
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_monochrome_tri(v0, v1, v2, word);
+
+        GP0_State::CommandStart
+    }
+
+    pub fn draw_transparent_monochrome_tri(&mut self, word: u32) -> GP0_State {
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_transparent_monochrome_tri(v0, v1, v2, word);
+
+        GP0_State::CommandStart
+    }
+
+    pub fn draw_transparent_monochrome_quad(&mut self, word: u32) -> GP0_State {
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let v3: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_transparent_monochrome_tri(v0, v1, v2, word);
+        self.write_transparent_monochrome_tri(v1, v2, v3, word);
+
+        GP0_State::CommandStart
+    }
+
     pub fn draw_monochrome_quad(&mut self, word: u32) -> GP0_State {
         let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
         let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
@@ -66,6 +98,19 @@ impl GPU {
         GP0_State::CommandStart
     }
 
+    pub fn draw_transparent_gouraud_tri(&mut self, word: u32) -> GP0_State {
+        let c0: Color = Color::compress_color_depth(word).into();
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c1: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c2: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_transparent_gouraud_tri(v0, v1, v2, c0, c1, c2);
+
+        GP0_State::CommandStart
+    }
+
     pub fn draw_gouraud_quad(&mut self, word: u32) -> GP0_State {
         let c0: Color = Color::compress_color_depth(word).into();
         let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
@@ -78,6 +123,22 @@ impl GPU {
 
         self.write_gouraud_tri(v0, v1, v2, c0, c1, c2);
         self.write_gouraud_tri(v1, v2, v3, c1, c2, c3);
+
+        GP0_State::CommandStart
+    }
+
+    pub fn draw_transparent_gouraud_quad(&mut self, word: u32) -> GP0_State {
+        let c0: Color = Color::compress_color_depth(word).into();
+        let v0: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c1: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v1: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c2: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v2: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+        let c3: Color = Color::compress_color_depth(self.gp0_parameters.pop_front().unwrap()).into();
+        let v3: Vertex = self.gp0_parameters.pop_front().unwrap().into();
+
+        self.write_transparent_gouraud_tri(v0, v1, v2, c0, c1, c2);
+        self.write_transparent_gouraud_tri(v1, v2, v3, c1, c2, c3);
 
         GP0_State::CommandStart
     }
@@ -102,6 +163,26 @@ impl GPU {
         }
     }
 
+    fn write_transparent_monochrome_tri(&mut self, v0: Vertex, v1: Vertex, v2: Vertex, color: u32) {
+        let mut v0 = v0;
+        let mut v1 = v1;
+
+        Vertex::ensure_vertex_order(&mut v0, &mut v1, v2);
+
+        let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
+
+        for x in min_x..max_x {
+            for y in min_y..max_y {
+                let pixel: Vertex = (x, y).into();
+                if pixel.is_inside_triangle(v0, v1, v2) {
+                    let coords = pixel.translate(self.drawing_offset).into();
+
+                    self.draw_transparent_pixel(color, coords);
+                }
+            }
+        }
+    }
+
     fn write_gouraud_tri(&mut self, v0: Vertex, v1: Vertex, v2: Vertex, c0: Color, c1: Color, c2: Color) {
         let mut v0 = v0;
         let mut v1 = v1;
@@ -115,15 +196,72 @@ impl GPU {
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
-        for x in min_x..max_x {
-            for y in min_y..max_y {
-                let pixel: Vertex = (x, y).into();
-                if pixel.is_inside_triangle(v0, v1, v2) {
-                    let coords = pixel.translate(self.drawing_offset).into();
-                    let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
-                    let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel).into();
+        if self.gpu_status.dither_24bit_to_15bit() != 0 {
+            for x in min_x..max_x {
+                for y in min_y..max_y {
+                    let pixel: Vertex = (x, y).into();
+                    if pixel.is_inside_triangle(v0, v1, v2) {
+                        let coords = pixel.translate(self.drawing_offset).into();
+                        let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                        let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel).into();
 
-                    self.draw_pixel(color, coords);
+                        self.draw_pixel(color, coords);
+                    }
+                }
+            }
+        } else {
+            for x in min_x..max_x {
+                for y in min_y..max_y {
+                    let pixel: Vertex = (x, y).into();
+                    if pixel.is_inside_triangle(v0, v1, v2) {
+                        let coords = pixel.translate(self.drawing_offset).into();
+                        let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                        let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).into();
+
+                        self.draw_pixel(color, coords);
+                    }
+                }
+            }
+        }
+    }
+
+    fn write_transparent_gouraud_tri(&mut self, v0: Vertex, v1: Vertex, v2: Vertex, c0: Color, c1: Color, c2: Color) {
+        let mut v0 = v0;
+        let mut v1 = v1;
+
+        let mut c0 = c0;
+        let mut c1 = c1;
+        
+        if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
+            std::mem::swap(&mut c0, &mut c1);
+        }
+
+        let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
+
+        if self.gpu_status.dither_24bit_to_15bit() != 0 {
+            for x in min_x..max_x {
+                for y in min_y..max_y {
+                    let pixel: Vertex = (x, y).into();
+                    if pixel.is_inside_triangle(v0, v1, v2) {
+                        let coords = pixel.translate(self.drawing_offset).into();
+                        let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                        let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel).into();
+
+                        self.draw_transparent_pixel(color, coords);
+                    }
+                }
+            }
+        } else {
+            for x in min_x..max_x {
+                for y in min_y..max_y {
+                    let pixel: Vertex = (x, y).into();
+                    if pixel.is_inside_triangle(v0, v1, v2) {
+                        let coords = pixel.translate(self.drawing_offset).into();
+                        let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                        let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).into();
+
+                        self.draw_transparent_pixel(color, coords);
+                    }
                 }
             }
         }
@@ -197,7 +335,7 @@ impl GPU {
                                     if *color != 0 {
                                         let pixel: Vertex = (px + i as i32, py).into();
                                         let coords: u32 = pixel.into();
-                                        self.draw_pixel_compressed(*color, coords);
+                                        self.draw_compressed_pixel(*color, coords);
                                     }
                                 });
                         }

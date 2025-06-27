@@ -1,5 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, hint::unreachable_unchecked, rc::{Rc, Weak}};
 
+use glam::u8vec3;
 use modular_bitfield::{bitfield, prelude::*};
 
 use crate::{bus::{interface::Interface, interrupt::Interrupt, timer::Timer}, gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
@@ -196,10 +197,15 @@ impl GPU {
                         ParametrizedCommand::VRAM_CPU_Copy => self.initialize_vram_cpu_copy(),
                         ParametrizedCommand::Polygon(word) => {
                             let polygon_type = (word >> 24) as u8; match polygon_type {
+                                0x20 => self.draw_monochrome_tri(word),
+                                0x22 => self.draw_transparent_monochrome_tri(word),
+                                0x2A => self.draw_transparent_monochrome_quad(word),
                                 0x28 => self.draw_monochrome_quad(word),
                                 0x2C => self.draw_modulated_quad(word),
                                 0x30 => self.draw_gouraud_tri(word),
+                                0x32 => self.draw_transparent_gouraud_tri(word),
                                 0x38 => self.draw_gouraud_quad(word),
+                                0x3A => self.draw_transparent_gouraud_quad(word),
                                 _ => {
                                     println!("Polygon command not implemented: {word:08X}");
                                     GP0_State::CommandStart
@@ -233,7 +239,23 @@ impl GPU {
         self.vram.write16(vram_addr, color_halfword);
     }
 
-    fn draw_pixel_compressed(&mut self, color: u16, coords: u32) {
+    fn draw_transparent_pixel(&mut self, color: u32, coords: u32) {
+        let color_halfword = Color::compress_color_depth(color);
+        
+        let x = coords & 0x3FF;
+        let y = (coords >> 16) & 0x1FF;
+
+        let vram_addr = ((y << 10) + x) << 1;
+
+        let back: Color = self.vram.read16(vram_addr).into();
+        let front: Color = color_halfword.into();
+
+        let blended = Color::compress_color_depth(front.blend(back, self.gpu_status.semi_transparency()).into());
+        
+        self.vram.write16(vram_addr, blended);
+    }
+
+    fn draw_compressed_pixel(&mut self, color: u16, coords: u32) {
         let x = coords & 0x3FF;
         let y = (coords >> 16) & 0x1FF;
 
@@ -244,12 +266,26 @@ impl GPU {
 
     pub fn render_vram(&self) -> Box<[Color; 512 * 1024]> {
         let mut output = Box::new([Color::default(); 512 * 1024]);
-        for y in 0..512 {
-            for x in 0..1024 {
-                let vram_addr = (((y << 10) + x) << 1) as u32;
-                let pixel = self.vram.read16(vram_addr);
+        if self.gpu_status.display_area_color_depth() == 0 {
+            for y in 0..512 {
+                for x in 0..1024 {
+                    let vram_addr = (((y << 10) + x) << 1) as u32;
+                    let pixel = self.vram.read16(vram_addr);
 
-                output[(y << 10) + x] = Color::from(pixel);
+                    output[(y << 10) + x] = Color::from(pixel);
+                }
+            }
+        } else {
+            for y in 0..512 {
+                let line_start = (y << 11) as u32;
+                for x in 0..682 {
+                    let vram_addr = line_start + (x * 3) as u32;
+                    let r = self.vram.read8(vram_addr);
+                    let g = self.vram.read8(vram_addr + 1);
+                    let b = self.vram.read8(vram_addr + 2);
+
+                    output[(y << 10) + x] = Color {rgb: u8vec3(r, g, b)};
+                }
             }
         }
 

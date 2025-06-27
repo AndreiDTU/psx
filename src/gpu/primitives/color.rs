@@ -64,6 +64,17 @@ impl Color {
 
         Color { rgb }
     }
+
+    #[inline]
+    pub fn blend(&self, back: Color, mode: u8) -> Color {
+        match mode {
+            0 => Color { rgb: (self.rgb / 2) + (back.rgb / 2) },
+            1 => Color { rgb: self.rgb.saturating_add(back.rgb) },
+            2 => Color { rgb: back.rgb.saturating_sub(self.rgb) },
+            3 => Color { rgb: back.rgb.saturating_add(self.rgb / 4) },
+            _ => unreachable!()
+        }
+    }
 }
 
 #[cfg(test)]

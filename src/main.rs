@@ -16,7 +16,7 @@ const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
 
 fn main() -> Result<(), anyhow::Error> {
-    let exe_binding = std::fs::read("ImageLoad.exe").unwrap();
+    let exe_binding = std::fs::read("RenderTexturePolygonCLUT4BPP.exe").unwrap();
     let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
