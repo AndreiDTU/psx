@@ -16,7 +16,6 @@ const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
 
 // const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
-const NTSC_FRAME_TIME: Duration = Duration::from_nanos(0);
 
 fn main() -> Result<(), anyhow::Error> {
     // let exe_binding = std::fs::read("RenderLine16BPP.exe").unwrap();
@@ -65,9 +64,9 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
 
-            let frame_time = frame_start.elapsed();
-            std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
-            frame_start = Instant::now();
+            // let frame_time = frame_start.elapsed();
+            // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
+            // frame_start = Instant::now();
         }
     }
 }

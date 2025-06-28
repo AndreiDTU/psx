@@ -44,10 +44,12 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if mode & 0x20 != 0 && *enabled {
+                    println!("Timer IRQ");
                     self.interrupt.borrow_mut().request(IRQ::TMR0);
                     *enabled = mode & 0x40 != 0;
                 }
             } else if *counter == target {
+                println!("Timer IRQ");
                 *counter = 0;
                 if mode & 0x10 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR0);
@@ -70,13 +72,15 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if mode & 0x20 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    println!("Timer IRQ");
+                    self.interrupt.borrow_mut().request(IRQ::TMR1);
                     *enabled = mode & 0x40 != 0;
                 }
             } else if *counter == target {
+                println!("Timer IRQ");
                 *counter = 0;
                 if mode & 0x10 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    self.interrupt.borrow_mut().request(IRQ::TMR1);
                     *enabled = mode & 0x40 != 0;
                 }
             }
@@ -96,13 +100,15 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if mode & 0x20 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    println!("Timer IRQ");
+                    self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = mode & 0x40 != 0;
                 }
             } else if *counter == target {
+                println!("Timer IRQ");
                 *counter = 0;
                 if mode & 0x10 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = mode & 0x40 != 0;
                 }
             }
@@ -115,7 +121,7 @@ impl Timer {
             0x0 => self.counter[timer_idx],
             0x4 => {
                 let mode = self.mode[timer_idx];
-                self.mode[timer_idx] &= !0x00C0;
+                self.mode[timer_idx] &= !0x1800;
                 mode
             }
             0x8 => self.target[timer_idx],
@@ -130,7 +136,7 @@ impl Timer {
             0x0 => self.counter[timer_idx] as u16,
             0x4 => {
                 let mode = self.mode[timer_idx];
-                self.mode[timer_idx] &= !0x00C0;
+                self.mode[timer_idx] &= !0x1800;
                 mode as u16
             }
             0x8 => self.target[timer_idx] as u16,
@@ -145,7 +151,7 @@ impl Timer {
             0x0 => self.counter[timer_idx] = value & 0xFFFF,
             0x4 => {
                 self.irq_enabled = [true; 3];
-                self.mode[timer_idx] = (value & 0x2FF) | 0x400;
+                self.mode[timer_idx] = (value & 0x3FF) | 0x400;
                 self.counter[timer_idx] = 0;
             }
             0x8 => self.target[timer_idx] = value & 0xFFFF,
@@ -160,7 +166,7 @@ impl Timer {
             0x0 => self.counter[timer_idx] = value as u32,
             0x4 => {
                 self.irq_enabled = [true; 3];
-                self.mode[timer_idx] = value as u32 & 0x2FF;
+                self.mode[timer_idx] = (value as u32 & 0x3FF) | 0x400;
                 self.counter[timer_idx] = 0;
             }
             0x8 => self.target[timer_idx] = value as u32,

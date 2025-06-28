@@ -1,6 +1,6 @@
 use std::{cell::RefCell, ops::{Index, IndexMut}, rc::Rc};
 
-use crate::{bus::{interface::Interface, interrupt::Interrupt}, Registers};
+use crate::{bus::{interface::Interface, interrupt::{Interrupt, IRQ}}, Registers};
 
 const CHANNELS: [u8; 7] = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60];
 
@@ -57,6 +57,14 @@ impl DMA {
                 _ => panic!("Unreachable channel: {channel}"),
             }
         }
+
+        if self.bus_error() || (self.master_interrupt_enabled() && self.channels[0x74] & 0x3F00_0000 != 0) {
+            let old_irq = self.master_interrupt();
+            self.channels[0x74] |= 0x8000_0000;
+            if !old_irq && self.master_interrupt() {
+                self.interrupt.borrow_mut().request(IRQ::DMA);
+            }
+        }
     }
 
     pub fn active_channel(&self) -> Option<u32> {
@@ -86,7 +94,7 @@ impl DMA {
             }
             0x74 => {
                 let interrupt_register = &mut self.channels[0x74];
-                *interrupt_register = value;
+                *interrupt_register = value & 0x7FFF_FFFF;
                 let mask = value & 0x7F00_0000;
                 *interrupt_register &= !mask;
             }
@@ -211,11 +219,10 @@ impl Channels {
 
         let bit = ((channel + 1) * 4) - 1;
         self.channels[7][0] &= !((1 << bit));
-        if self.sync_type(index) == 1 {
-            let blocks = self.block_amount(index).saturating_sub(1) as u32;
-            let block_control = &mut self.channels[channel as usize][1];
-            *block_control = (*block_control & 0x0000_FFFF) | (blocks << 16)
-        }
+
+        let mask = (self.channels[channel as usize][1] >> 16) & 0x7F;
+        let irq = mask & (1 << channel);
+        self.channels[7][1] |= irq << 24;
     }
 
     pub fn enabled(&self, index: u32) -> bool {
@@ -227,21 +234,6 @@ impl Channels {
     pub fn priority(&self, index: u32) -> u8 {
         let channel = index >> 4;
         (self.channels[7][0] & (0x7 << channel)) as u8
-    }
-
-    pub fn interrupt_mode(&self, index: u32) -> bool {
-        let channel = index >> 4;
-        self.channels[7][1] & (1 << channel) != 0
-    }
-
-    pub fn interrupt_mask(&self, index: u32) -> bool {
-        let channel = index >> 4;
-        self.channels[7][1] & (1 << (channel + 16)) != 0
-    }
-
-    pub fn interrupt_flag(&self, index: u32) -> bool {
-        let channel = index >> 4;
-        self.channels[7][1] & (1 << (channel + 24)) != 0
     }
 
     pub fn word_num(&self, index: u32) -> u16 {

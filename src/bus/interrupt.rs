@@ -49,17 +49,15 @@ impl Interrupt {
     }
 
     pub fn request(&mut self, irq: IRQ) {
+        // println!("IRQ: {irq:#?}");
         self.I_STAT |= self.I_MASK & irq as u32;
         if self.I_STAT != 0 {
             self.system_control.borrow_mut().request_interrupt();
         }
     }
-
-    pub fn poll(&self) -> bool {
-        self.I_STAT & 0x7FF != 0
-    }
 }
 
+#[derive(Debug)]
 pub enum IRQ {
     VBLANK        = 0x001,
     GPU           = 0x002,
