@@ -1,5 +1,7 @@
 use glam::{DVec3, IVec2, IVec4, Vec4Swizzles};
 
+use crate::gpu::primitives::color::Color;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Vertex {
@@ -49,6 +51,83 @@ impl Vertex {
     #[inline]
     pub fn translate(&self, translation: Vertex) -> Vertex {
         Vertex { coords: self.coords.wrapping_add(translation.coords) }
+    }
+
+    #[inline]
+    pub fn bresenham_line(&self, end: Vertex) -> Vec<Vertex> {
+        let mut points = Vec::new();
+
+        let [mut x0, mut y0] = self.coords.to_array();
+        let [x1, y1] = end.coords.to_array();
+
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+        let sx = if x0 < x1 {1} else {-1};
+        let sy = if y0 < y1 {1} else {-1};
+
+        let mut err = dx - dy;
+
+        loop {
+            points.push((x0, y0).into());
+            if x0 == x1 && y0 == y1 {
+                break;
+            }
+            let e2 = err * 2;
+            if e2 > -dy {
+                err -= dy;
+                x0 += sx;
+            }
+            if e2 < dx {
+                err += dx;
+                y0 += sy;
+            }
+        }
+
+        points
+    }
+
+    #[inline]
+    pub fn bresenham_line_gouraud(&self, end: Vertex, start_color: Color, end_color: Color) -> Vec<(Vertex, Color)> {
+        let mut points = Vec::new();
+
+        let [mut x0, mut y0] = self.coords.to_array();
+        let [x1, y1] = end.coords.to_array();
+
+        let dx = (x1 - x0).abs();
+        let dy = (y1 - y0).abs();
+        let sx = if x0 < x1 {1} else {-1};
+        let sy = if y0 < y1 {1} else {-1};
+
+        let mut err = dx - dy;
+
+        let total_steps = dx.max(dy) as usize;
+        let mut step = 0;
+
+        loop {
+            let t = if total_steps > 0 {
+                step as f64 / total_steps as f64
+            } else {0.0};
+
+            let color = Color {rgb: start_color.rgb + ((end_color.rgb - start_color.rgb).as_dvec3() * t).as_u8vec3()};
+
+            points.push(((x0, y0).into(), color));
+            if x0 == x1 && y0 == y1 {
+                break;
+            }
+            let e2 = err * 2;
+            if e2 > -dy {
+                err -= dy;
+                x0 += sx;
+            }
+            if e2 < dx {
+                err += dx;
+                y0 += sy;
+            }
+
+            step += 1;
+        }
+
+        points
     }
 
     #[inline]

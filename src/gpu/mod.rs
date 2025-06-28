@@ -56,6 +56,7 @@ pub enum ParametrizedCommand {
     CPU_VRAM_Copy,
     VRAM_CPU_Copy,
     Polygon(u32),
+    Line(u32),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -64,6 +65,11 @@ pub enum GP0_State {
     ReceivingParameters { 
         idx: usize,
         expected: usize,
+        command: ParametrizedCommand,
+    },
+    ReceivingPolyLineParameters {
+        color_word: bool,
+        gouraud: bool,
         command: ParametrizedCommand,
     },
     ReceivingData(BlitFields),
@@ -156,10 +162,7 @@ impl GPU {
                 self.gp0_parameters.clear();
                 match word >> 29 {
                     1 => self.set_polygon_state(word),
-                    2 => {
-                        println!("draw line {word:08X}");
-                        GP0_State::CommandStart
-                    }
+                    2 => self.set_line_state(word),
                     3 => {
                         println!("draw rectangle {word:08X}");
                         GP0_State::CommandStart
@@ -196,7 +199,7 @@ impl GPU {
                         ParametrizedCommand::CPU_VRAM_Copy => self.initialize_cpu_vram_copy(),
                         ParametrizedCommand::VRAM_CPU_Copy => self.initialize_vram_cpu_copy(),
                         ParametrizedCommand::Polygon(word) => {
-                            let polygon_type = (word >> 24) as u8; match polygon_type {
+                            match (word >> 24) as u8 {
                                 0x20 => self.draw_monochrome_tri(word),
                                 0x22 => self.draw_transparent_monochrome_tri(word),
                                 0x2A => self.draw_transparent_monochrome_quad(word),
@@ -212,6 +215,18 @@ impl GPU {
                                 }
                             }
                         }
+                        ParametrizedCommand::Line(word) => {
+                            match ((word >> 24) & !((1 << 26) | (1 << 24))) as u8 {
+                                0x40 => self.draw_monochrome_line(word),
+                                0x42 => self.draw_transparent_monochrome_line(word),
+                                0x50 => self.draw_gouraud_line(word),
+                                0x52 => self.draw_transparent_gouraud_line(word),
+                                _ => {
+                                    println!("Line command not implemented: {word:08X}");
+                                    GP0_State::CommandStart
+                                }
+                            }
+                        }
                     }
                 } else {
                     GP0_State::ReceivingParameters { idx: idx + 1, expected, command }
@@ -219,6 +234,29 @@ impl GPU {
             }
 
             GP0_State::ReceivingData(_) => self.process_cpu_vram_copy(word),
+            GP0_State::ReceivingPolyLineParameters { color_word, gouraud, command } => {
+                if (color_word || !gouraud) && (word & 0xF000F000 == 0x50005000) {
+                    match command {
+                        ParametrizedCommand::Line(word) => {
+                            match ((word >> 24) & !((1 << 26) | (1 << 24))) as u8 {
+                                0x48 => self.draw_monchrome_polyline(word),
+                                0x4A => self.draw_transparent_monchrome_polyline(word),
+                                0x58 => self.draw_gouraud_polyline(word),
+                                0x5A => self.draw_transparent_gouraud_polyline(word),
+                                _ => {
+                                    println!("Polyline command not implemented: {word:08X}");
+                                    GP0_State::CommandStart
+                                }
+                            }
+                        }
+                        _ => unreachable!()
+                    }
+                } else {
+                    self.gp0_parameters.push_back(word);
+
+                    GP0_State::ReceivingPolyLineParameters { color_word: !color_word && gouraud, gouraud, command }
+                }
+            }
             _ => panic!("Unsupported mode for writes"),
         }
     }
