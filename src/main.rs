@@ -1,10 +1,10 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
-use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc};
+use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Duration, Instant}};
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cpu::CPU};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cpu::{system_control::SystemControl, CPU}};
 
 pub mod bus;
 pub mod bios;
@@ -15,9 +15,12 @@ pub mod ram;
 const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
 
+// const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
+const NTSC_FRAME_TIME: Duration = Duration::from_nanos(0);
+
 fn main() -> Result<(), anyhow::Error> {
-    let exe_binding = std::fs::read("RenderLine16BPP.exe").unwrap();
-    let exe = exe_binding.as_slice();
+    // let exe_binding = std::fs::read("RenderLine16BPP.exe").unwrap();
+    // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -31,16 +34,19 @@ fn main() -> Result<(), anyhow::Error> {
     let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, VRAM_WIDTH, VRAM_HEIGHT)?;
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let interrupt = Rc::new(RefCell::new(Interrupt::default()));
+    let system_control = Rc::new(RefCell::new(SystemControl::new()));
+    let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
     let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt)?));
     let dma_running = Rc::new(RefCell::new(false));
-    let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), dma_running.clone())));
+    let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);
-    let mut cpu = CPU::new(interface.clone(), dma_running.clone());
+    let mut cpu = CPU::new(interface.clone(), dma_running, system_control);
+
+    let mut frame_start = Instant::now();
 
     loop {
-        sideload_exe(&mut cpu, interface.clone(), exe);
+        // sideload_exe(&mut cpu, interface.clone(), exe);
         cpu.tick();
         timer.borrow_mut().tick();
         dma.borrow_mut().tick();
@@ -58,6 +64,10 @@ fn main() -> Result<(), anyhow::Error> {
                     _ => {}
                 }
             }
+
+            let frame_time = frame_start.elapsed();
+            std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
+            frame_start = Instant::now();
         }
     }
 }

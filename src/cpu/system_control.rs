@@ -39,6 +39,14 @@ impl SystemControl {
         handler
     }
 
+    pub fn request_interrupt(&mut self) {
+        self.R[13] |= 1 << 10;
+    }
+
+    pub fn trigger_interrupt(&self) -> bool {
+        self.R[13] & (1 << 10) != 0 && self.R[12] & 0x401 == 0x401
+    }
+
     pub fn rfe(&mut self) {
         let mode = self.R[12] & 0x3F;
         self.R[12] &= !0x3F;

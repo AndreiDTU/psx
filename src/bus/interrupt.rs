@@ -1,10 +1,19 @@
-#[derive(Default)]
+use std::{cell::RefCell, rc::Rc};
+
+use crate::cpu::system_control::SystemControl;
+
 pub struct Interrupt {
     I_STAT: u32,
     I_MASK: u32,
+
+    system_control: Rc<RefCell<SystemControl>>,
 }
 
 impl Interrupt {
+    pub fn new(system_control: Rc<RefCell<SystemControl>>) -> Self {
+        Self { I_STAT: 0, I_MASK: 0, system_control }
+    }
+
     pub fn read_status32(&self) -> u32 {
         self.I_STAT
     }
@@ -14,11 +23,12 @@ impl Interrupt {
     }
 
     pub fn acknowledge32(&mut self, value: u32) {
-        self.I_STAT &= value;
+        self.I_STAT &= !(value);
     }
 
     pub fn write_mask32(&mut self, value: u32) {
-        self.I_MASK = value;
+        self.I_MASK = value & 0x7FF;
+        println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn read_status16(&self) -> u16 {
@@ -30,15 +40,23 @@ impl Interrupt {
     }
 
     pub fn acknowledge16(&mut self, value: u16) {
-        self.I_STAT &= value as u32;
+        self.I_STAT &= !(value as u32);
     }
 
     pub fn write_mask16(&mut self, value: u16) {
         self.I_MASK = value as u32;
+        println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn request(&mut self, irq: IRQ) {
         self.I_STAT |= self.I_MASK & irq as u32;
+        if self.I_STAT != 0 {
+            self.system_control.borrow_mut().request_interrupt();
+        }
+    }
+
+    pub fn poll(&self) -> bool {
+        self.I_STAT & 0x7FF != 0
     }
 }
 
@@ -53,5 +71,5 @@ pub enum IRQ {
     BYTE_RECEIVED = 0x080,
     SIO           = 0x100,
     SPU           = 0x200,
-    LIGHTPEN      = 0x800,
+    LIGHTPEN      = 0x400,
 }

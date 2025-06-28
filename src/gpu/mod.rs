@@ -1,9 +1,9 @@
-use std::{cell::RefCell, collections::VecDeque, hint::unreachable_unchecked, rc::{Rc, Weak}};
+use std::{cell::RefCell, collections::VecDeque, hint::unreachable_unchecked, rc::Rc};
 
 use glam::u8vec3;
 use modular_bitfield::{bitfield, prelude::*};
 
-use crate::{bus::{interface::Interface, interrupt::Interrupt, timer::Timer}, gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
+use crate::{bus::{interrupt::{Interrupt, IRQ}, timer::Timer}, gpu::primitives::{color::Color, vertex::Vertex}, ram::RAM};
 
 const VRAM_SIZE: usize = 1024 * 1024;
 
@@ -96,7 +96,7 @@ pub struct GPU {
     cycle: usize,
     even_odd_frame: bool,
 
-    interface: Rc<RefCell<Interrupt>>,
+    interrupt: Rc<RefCell<Interrupt>>,
     timer: Rc<RefCell<Timer>>,
 }
 
@@ -124,7 +124,7 @@ impl GPU {
             cycle: 0,
             even_odd_frame: false,
 
-            interface,
+            interrupt: interface,
             timer,
         }
     }
@@ -135,6 +135,7 @@ impl GPU {
             self.cycle = 0;
 
             self.even_odd_frame = !self.even_odd_frame;
+            self.interrupt.borrow_mut().request(IRQ::VBLANK);
 
             return true;
         }

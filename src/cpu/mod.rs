@@ -18,7 +18,7 @@ pub struct CPU {
     branch: bool,
     delay_slot: bool,
 
-    system_control: SystemControl,
+    pub system_control: Rc<RefCell<SystemControl>>,
 
     interface: Rc<RefCell<Interface>>,
     pub dma_running: Rc<RefCell<bool>>,
@@ -28,7 +28,7 @@ pub struct CPU {
 }
 
 impl CPU {
-    pub fn new(interface: Rc<RefCell<Interface>>, dma_running: Rc<RefCell<bool>>) -> Self {
+    pub fn new(interface: Rc<RefCell<Interface>>, dma_running: Rc<RefCell<bool>>, system_control: Rc<RefCell<SystemControl>>) -> Self {
         let R = Registers {R: [0; 32]};
         let pc = 0xBFC0_0000;
         let (hi, lo) = (0, 0);
@@ -45,7 +45,7 @@ impl CPU {
             branch: false,
             delay_slot: false,
 
-            system_control: SystemControl::new(),
+            system_control,
 
             interface,
             dma_running,
@@ -79,11 +79,17 @@ impl CPU {
 
         self.execute(instruction);
         self.commit_writes();
+
+        if self.system_control.borrow().trigger_interrupt() {
+            self.raise_exception(Cause::INT);
+        }
+        
         // self.check_for_tty_output();
     }
 
     pub fn execute(&mut self, instruction: u32) {
         if self.trace {println!("instruction: {:08X}, pc: {:08X}, R31: {:08X}", instruction, self.pc, self.R[31])};
+
         let op = instruction.op();
         match op {
             0b000000 => {
@@ -172,7 +178,7 @@ impl CPU {
     fn raise_exception(&mut self, cause: Cause) {
         // println!("Raised exception on cause: {:#?}", cause);
 
-        self.pc = if self.system_control.raise_exception(cause as u32, self.current_pc, self.delay_slot) {
+        self.pc = if self.system_control.borrow_mut().raise_exception(cause as u32, self.current_pc, self.delay_slot) {
             0xBFC0_0180
         } else {
             0x8000_0080
@@ -197,7 +203,7 @@ impl CPU {
     }
 
     fn write32(&mut self, addr: u32, value: u32) {
-        if self.system_control.read_register(12) & 0x10000 != 0 {
+        if self.system_control.borrow().read_register(12) & 0x10000 != 0 {
             // println!("Cache not implemented");
             return;
         }
@@ -207,7 +213,7 @@ impl CPU {
     }
 
     fn write16(&mut self, addr: u32, value: u16) {
-        if self.system_control.read_register(12) & 0x10000 != 0 {
+        if self.system_control.borrow().read_register(12) & 0x10000 != 0 {
             // println!("Cache not implemented");
             return;
         }
@@ -217,7 +223,7 @@ impl CPU {
     }
 
     fn write8(&mut self, addr: u32, value: u8) {
-        if self.system_control.read_register(12) & 0x10000 != 0 {
+        if self.system_control.borrow().read_register(12) & 0x10000 != 0 {
             // println!("Cache not implemented");
             return;
         }

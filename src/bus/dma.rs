@@ -1,6 +1,6 @@
 use std::{cell::RefCell, ops::{Index, IndexMut}, rc::Rc};
 
-use crate::{bus::interface::Interface, Registers};
+use crate::{bus::{interface::Interface, interrupt::Interrupt}, Registers};
 
 const CHANNELS: [u8; 7] = [0x00, 0x10, 0x20, 0x30, 0x40, 0x50, 0x60];
 
@@ -11,13 +11,14 @@ pub struct DMA {
     header: u32,
 
     interface: Rc<RefCell<Interface>>,
+    interrupt: Rc<RefCell<Interrupt>>,
 
     clock: usize,
     running: Rc<RefCell<bool>>,
 }
 
 impl DMA {
-    pub fn new(interface: Rc<RefCell<Interface>>, running: Rc<RefCell<bool>>) -> Self {
+    pub fn new(interface: Rc<RefCell<Interface>>, interrupt: Rc<RefCell<Interrupt>>, running: Rc<RefCell<bool>>) -> Self {
         let mut channels = Channels {channels: [Registers{R: [0; 4]}; 8]};
         channels[0x70] = 0x0765_4321;
         Self {
@@ -27,6 +28,7 @@ impl DMA {
             header: 0x00FF_FFFF,
 
             interface,
+            interrupt,
             
             clock: 0,
             running,

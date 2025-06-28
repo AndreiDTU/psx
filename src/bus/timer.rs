@@ -1,6 +1,6 @@
-use std::{cell::RefCell, hint::unreachable_unchecked, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
-use crate::bus::interrupt::Interrupt;
+use crate::bus::interrupt::{Interrupt, IRQ};
 
 pub struct Timer {
     counter: [u32; 3],
@@ -26,26 +26,84 @@ impl Timer {
     }
 
     pub fn tick(&mut self) {
-
+        self.tick_counter_0();
+        self.tick_counter_1();
+        self.tick_counter_2();
     }
 
-    fn tick_counter_0(&mut self, cycle: usize, resolution: u8) {
+    fn tick_counter_0(&mut self) {
         let counter = &mut self.counter[0];
         let mode = self.mode[0];
         let target = self.target[0];
+        let enabled = &mut self.irq_enabled[1];
 
         if mode & 1 != 0 {
-            match (mode >> 1) & 3 {
-                0 => {}
-                _ => unsafe { unreachable_unchecked() }
-            }
+            panic!("Timer 0 sync modes not implemented")
         } else {
             *counter += 1;
             if *counter == 0xFFFF {
                 *counter = 0;
-                if mode & 0x20 != 0 && self.irq_enabled[0] {
-                    self.interrupt.borrow_mut().request(super::interrupt::IRQ::TMR0);
-                    self.irq_enabled[0] = mode & 0x40 != 0;
+                if mode & 0x20 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
+                }
+            } else if *counter == target {
+                *counter = 0;
+                if mode & 0x10 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
+                }
+            }
+        }
+    }
+
+    fn tick_counter_1(&mut self) {
+        let counter = &mut self.counter[1];
+        let mode = self.mode[1];
+        let target = self.target[1];
+        let enabled = &mut self.irq_enabled[1];
+
+        if mode & 1 != 0 {
+            panic!("Timer 1 sync modes not implemented")
+        } else {
+            *counter += 1;
+            if *counter == 0xFFFF {
+                *counter = 0;
+                if mode & 0x20 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
+                }
+            } else if *counter == target {
+                *counter = 0;
+                if mode & 0x10 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
+                }
+            }
+        }
+    }
+
+    fn tick_counter_2(&mut self) {
+        let counter = &mut self.counter[2];
+        let mode = self.mode[2];
+        let target = self.target[2];
+        let enabled = &mut self.irq_enabled[2];
+
+        if mode & 1 != 0 {
+            panic!("Timer 2 sync modes not implemented")
+        } else {
+            *counter += 1;
+            if *counter == 0xFFFF {
+                *counter = 0;
+                if mode & 0x20 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
+                }
+            } else if *counter == target {
+                *counter = 0;
+                if mode & 0x10 != 0 && *enabled {
+                    self.interrupt.borrow_mut().request(IRQ::TMR0);
+                    *enabled = mode & 0x40 != 0;
                 }
             }
         }

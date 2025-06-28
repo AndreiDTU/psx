@@ -6,7 +6,7 @@ impl CPU {
         match cop_instruction {
             0b00000 => self.mfc0(instruction),
             0b00100 => self.mtc0(instruction),
-            0b10000 => self.system_control.rfe(),
+            0b10000 => self.system_control.borrow_mut().rfe(),
             _ => panic!("{:08X} Unsupported cop op: {:06b}..{:05b}", instruction, instruction.op(), cop_instruction)
         }
     }
@@ -15,7 +15,7 @@ impl CPU {
         let rt = instruction.rt();
         let rd = instruction.rd();
         
-        let value = self.system_control.read_register(rd);
+        let value = self.system_control.borrow().read_register(rd);
         self.schedule_write(rt, value);
     }
 
@@ -23,7 +23,7 @@ impl CPU {
         let rt = instruction.rt();
         let rd = instruction.rd();
 
-        self.system_control.write_register(rd, self.R[rt]);
+        self.system_control.borrow_mut().write_register(rd, self.R[rt]);
     }
 
     pub fn cop2(&mut self, instruction: u32) {

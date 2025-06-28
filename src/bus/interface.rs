@@ -28,6 +28,9 @@ const DMA_END: u32 = DMA_START + 0x80;
 const TIMER_START: u32 = 0x1F801100;
 const TIMER_END: u32 = TIMER_START + 0x30;
 
+const CD_ROM_START: u32 = 0x1F801800;
+const CD_ROM_END: u32 = CD_ROM_START + 4;
+
 const GPU_START: u32 = 0x1F801810;
 const GPU_END: u32 = GPU_START + 8;
 
@@ -55,7 +58,7 @@ pub struct Interface {
     pub dram: RAM,
     pub scratchpad: RAM,
     pub gpu: GPU,
-    interrupt: Rc<RefCell<Interrupt>>,
+    pub interrupt: Rc<RefCell<Interrupt>>,
     timer: Rc<RefCell<Timer>>,
 }
 
@@ -81,6 +84,7 @@ impl Interface {
             MEM_CTRL_START..MEM_CTRL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
+            CD_ROM_START..CD_ROM_END => 0,
             IQR_START..IRQ_END => {
                 let offset = addr - IQR_START;
                 match offset {
@@ -115,6 +119,7 @@ impl Interface {
             MEM_CTRL_START..MEM_CTRL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
+            CD_ROM_START..CD_ROM_END => 0,
             IQR_START..IRQ_END => {
                 let offset = addr - IQR_START;
                 match offset {
@@ -139,6 +144,7 @@ impl Interface {
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
+            CD_ROM_START..CD_ROM_END => 0,
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
@@ -156,6 +162,7 @@ impl Interface {
             MEM_CTRL_START..MEM_CTRL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write32(addr - TIMER_START, value),
+            CD_ROM_START..CD_ROM_END => {},
             IQR_START..IRQ_END => {
                 let offset = addr - IQR_START;
                 match offset {
@@ -193,6 +200,7 @@ impl Interface {
             MEM_CTRL_START..MEM_CTRL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write16(addr - TIMER_START, value),
+            CD_ROM_START..CD_ROM_END => {},
             IQR_START..IRQ_END => {
                 let offset = addr - IQR_START;
                 match offset {
@@ -215,6 +223,7 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
             MEM_CTRL_START..MEM_CTRL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
+            CD_ROM_START..CD_ROM_END => {},
             VOICE_START..VOICE_END => {},
             SPU_START..SPU_END => {},
             REVERB_START..REVERB_END => {},
