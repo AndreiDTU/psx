@@ -175,7 +175,12 @@ impl GPU {
                     5 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::CPU_VRAM_Copy},
                     6 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::VRAM_CPU_Copy},
                     0 | 7 => match word >> 24 {
-                        0x00 => GP0_State::CommandStart,
+                        // NOP
+                        0x00 | 0x04..=0x1E | 0xE0 | 0xE7..=0xEF =>
+                            GP0_State::CommandStart,
+                        // Weird NOP that takes up space in the FIFO, no FIFO in this emulator though
+                        0x03 => GP0_State::CommandStart,
+
                         0x1F => self.irq(),
                         0xE1 => self.set_texpage(word),
                         0xE2 => self.set_tex_window(word),
