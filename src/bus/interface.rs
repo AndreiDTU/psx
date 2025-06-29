@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::{Rc, Weak}};
 
-use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, gpu::GPU, ram::RAM};
+use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, gpu::GPU, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -49,8 +49,8 @@ const EXPANSION_2_END: u32 = EXPANSION_2_START + 66;
 const BIOS_START: u32 = 0x1FC0_0000;
 const BIOS_END: u32 = BIOS_START + (512 * 1024);
 
-const CACHE_CONTROL: u32 = 0xFFFE0130;
-const CACHE_CONTROL_END: u32 = CACHE_CONTROL + 4;
+const CACHE_CONTROL_START: u32 = 0xFFFE_0130;
+const CACHE_CONTROL_END: u32 = 0xFFFF_FFFF;
 
 pub struct Interface {
     bios: BIOS,
@@ -59,18 +59,19 @@ pub struct Interface {
     pub scratchpad: RAM,
     pub gpu: GPU,
     pub interrupt: Rc<RefCell<Interrupt>>,
+    cd_rom: Rc<RefCell<CD_ROM>>,
     timer: Rc<RefCell<Timer>>,
 }
 
 impl Interface {
-    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
         let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
         let gpu = GPU::new(interrupt.clone(), timer.clone());
 
-        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer })
+        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer, cd_rom })
     }
 
     pub fn read32(&mut self, addr: u32) -> u32 {
@@ -105,6 +106,7 @@ impl Interface {
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
+            CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
     }
@@ -135,7 +137,7 @@ impl Interface {
         }
     }
 
-    pub fn read8(&self, addr: u32) -> u8 {
+    pub fn read8(&mut self, addr: u32) -> u8 {
         let addr = mask_region(addr);
         match addr {
             DRAM_START..DRAM_END => self.dram.read8(addr - DRAM_START),
@@ -144,7 +146,7 @@ impl Interface {
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
-            CD_ROM_START..CD_ROM_END => 0,
+            CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
@@ -183,7 +185,7 @@ impl Interface {
             VOICE_START..VOICE_END => {},
             SPU_START..SPU_END => {},
             REVERB_START..REVERB_END => {},
-            CACHE_CONTROL..CACHE_CONTROL_END => {
+            CACHE_CONTROL_START..CACHE_CONTROL_END => {
                 // println!("Write to CACHE_CONTROL")
             }
             _ => panic!("Write access at unmapped address: {:08X}", addr),
@@ -223,7 +225,7 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
             MEM_CTRL_START..MEM_CTRL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
-            CD_ROM_START..CD_ROM_END => {},
+            CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().write8(addr - CD_ROM_START, value),
             VOICE_START..VOICE_END => {},
             SPU_START..SPU_END => {},
             REVERB_START..REVERB_END => {},

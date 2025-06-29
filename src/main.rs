@@ -1,16 +1,18 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
+#[allow(unused_imports)]
 use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Duration, Instant}};
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cpu::{system_control::SystemControl, CPU}};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}};
 
-pub mod bus;
-pub mod bios;
-pub mod cpu;
-pub mod gpu;
-pub mod ram;
+mod bus;
+mod bios;
+mod cpu;
+mod gpu;
+mod ram;
+mod cd_rom;
 
 const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
@@ -18,8 +20,8 @@ const VRAM_HEIGHT: u32 = 512;
 // const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("RenderLine16BPP.exe").unwrap();
-    // let exe = exe_binding.as_slice();
+    let exe_binding = std::fs::read("RenderLine16BPP.exe").unwrap();
+    let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -36,19 +38,26 @@ fn main() -> Result<(), anyhow::Error> {
     let system_control = Rc::new(RefCell::new(SystemControl::new()));
     let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt)?));
+    let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone())));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone())?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);
     let mut cpu = CPU::new(interface.clone(), dma_running, system_control);
 
-    let mut frame_start = Instant::now();
+    let mut instruction = true;
+
+    // let mut frame_start = Instant::now();
 
     loop {
         // sideload_exe(&mut cpu, interface.clone(), exe);
-        cpu.tick();
+        if instruction {
+            cpu.tick();
+        }
+        instruction = !instruction;
         timer.borrow_mut().tick();
         dma.borrow_mut().tick();
+        cd_rom.borrow_mut().tick();
         if interface.borrow_mut().gpu.tick() {
             let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
             texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;

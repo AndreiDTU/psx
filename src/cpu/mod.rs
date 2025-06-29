@@ -61,7 +61,7 @@ impl CPU {
 
         let instruction = self.read32(self.pc);
         if self.stalled {
-            // println!("Stalled!");
+            println!("Stalled!");
             return
         }
 
@@ -199,7 +199,7 @@ impl CPU {
 
     fn read8(&mut self, addr: u32) -> u8 {
         self.stalled = *self.dma_running.borrow();
-        self.interface.borrow().read8(addr)
+        self.interface.borrow_mut().read8(addr)
     }
 
     fn write32(&mut self, addr: u32, value: u32) {
