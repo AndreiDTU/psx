@@ -38,6 +38,14 @@ impl Interrupt {
         }
     }
 
+    pub fn acknowledge16(&mut self, value: u16) {
+        self.I_STAT &= (value & 0x7FF) as u32;
+        if self.I_STAT & self.I_MASK == 0 {
+            // println!("Clearing interrupt!");
+            self.system_control.borrow_mut().clear_interrupt();
+        }
+    }
+
     pub fn write_mask32(&mut self, value: u32) {
         self.I_MASK = value & 0x7FF;
         println!("interrupt mask: {:08X}", self.I_MASK);
@@ -57,14 +65,6 @@ impl Interrupt {
             self.system_control.borrow_mut().clear_interrupt();
         } else {
             self.system_control.borrow_mut().request_interrupt();
-        }
-    }
-
-    pub fn acknowledge16(&mut self, value: u16) {
-        self.I_STAT &= (value & 0x7FF) as u32;
-        if self.I_STAT & self.I_MASK == 0 {
-            // println!("Clearing interrupt!");
-            self.system_control.borrow_mut().clear_interrupt();
         }
     }
 

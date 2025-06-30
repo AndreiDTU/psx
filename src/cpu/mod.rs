@@ -83,7 +83,6 @@ impl CPU {
         if self.system_control.borrow().trigger_interrupt() {
             println!("IRQ triggered!");
             self.raise_exception(Cause::INT);
-            return;
         }
         
         self.check_for_tty_output();
@@ -180,7 +179,11 @@ impl CPU {
     fn raise_exception(&mut self, cause: Cause) {
         // println!("Raised exception on cause: {:#?}", cause);
 
-        self.pc = if self.system_control.borrow_mut().raise_exception(cause as u32, self.current_pc, self.pc, self.delay_slot) {
+        if cause == Cause::INT {
+            self.current_pc = self.pc;
+        }
+
+        self.pc = if self.system_control.borrow_mut().raise_exception(cause as u32, self.current_pc, self.delay_slot) {
             0xBFC0_0180
         } else {
             0x8000_0080

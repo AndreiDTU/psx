@@ -1,5 +1,6 @@
 use crate::{cpu::decoder::Cause, Registers};
 
+#[derive(Debug)]
 pub struct SystemControl {
     R: Registers<64>
 }
@@ -21,21 +22,21 @@ impl SystemControl {
         self.R[register]
     }
 
-    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, pc: u32, delay_slot: bool) -> bool {
+    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, delay_slot: bool) -> bool {
         let handler = self.R[12] & 0x40_0000 != 0;
-
-        let pc = if cause == Cause::INT as u32 {pc} else {current_pc};
 
         let old = self.R[13] & 0x300;
         self.R[13] = cause << 2;
         self.R[13] |= old;
 
         if delay_slot {
+            println!("{:02X} in delay slot", cause);
             self.R[13] |= 1 << 31;
-            self.R[14] = pc.wrapping_sub(4);
+            self.R[14] = current_pc.wrapping_sub(4);
         } else {
+            println!("{:02X} not in delay slot", cause);
             self.R[13] &= !(1 << 31);
-            self.R[14] = pc;
+            self.R[14] = current_pc;
         }
 
         let mode = self.R[12] & 0x3F;
@@ -62,6 +63,7 @@ impl SystemControl {
     }
 
     pub fn rfe(&mut self) {
+        println!("RFE! cop0 {:08X}", self.R[12]);
         let mode = self.R[12] & 0x3F;
         let old = self.R[12] & 0x30;
         self.R[12] &= !0x3F;
