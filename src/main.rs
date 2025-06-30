@@ -39,7 +39,7 @@ fn main() -> Result<(), anyhow::Error> {
     let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
     let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone())));
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone())?));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone())?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);
@@ -73,9 +73,8 @@ fn main() -> Result<(), anyhow::Error> {
                 // frame_start = Instant::now();
             }
         }
-        instruction = !instruction;
-        
         timer.borrow_mut().tick();
+        instruction = !instruction;
         dma.borrow_mut().tick();
         cd_rom.borrow_mut().tick();
     }

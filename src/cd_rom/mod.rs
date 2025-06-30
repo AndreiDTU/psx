@@ -127,6 +127,7 @@ impl CD_ROM {
     }
 
     fn execute(&mut self, command: u8) {
+        self.result_idx = 0;
         println!("CD-ROM command: {command:02X}");
         match command {
             0x01 => self.send_status(),
@@ -148,6 +149,7 @@ impl CD_ROM {
     fn get_id(&mut self) {
         self.status.insert(CD_ROM_STATUS::SHELL);
         self.send_status();
+        self.second_response = SECOND_RESPONSE::GetID;
     }
 
     fn get_id_second_response(&mut self) {

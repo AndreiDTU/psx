@@ -67,11 +67,10 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>, timer: Rc<RefCell<Timer>>) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
-        let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
         let gpu = GPU::new(interrupt.clone(), timer.clone());
 
         Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer, cd_rom })
