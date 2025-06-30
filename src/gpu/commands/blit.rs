@@ -73,6 +73,8 @@ impl GPU {
             }
         ));
 
+        self.gpu_status.set_ready_to_send_VRAM_to_CPU(1);
+
         GP0_State::CommandStart
     }
 
@@ -93,6 +95,7 @@ impl GPU {
 
             if fields.current_row == fields.height {
                 self.gpu_read_transfer = None;
+                self.gpu_status.set_ready_to_send_VRAM_to_CPU(0);
                 return;
             }
         }

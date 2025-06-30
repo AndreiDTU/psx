@@ -18,12 +18,20 @@ impl Interrupt {
         self.I_STAT
     }
 
+    pub fn read_status16(&self) -> u16 {
+        self.I_STAT as u16
+    }
+
     pub fn read_mask32(&self) -> u32 {
         self.I_MASK & 0x7FF
     }
 
+    pub fn read_mask16(&self) -> u16 {
+        self.I_MASK as u16 & 0x7FF
+    }
+
     pub fn acknowledge32(&mut self, value: u32) {
-        self.I_STAT &= (value & 0x7FF) | 0xF800;
+        self.I_STAT &= value & 0x7FF;
         if self.I_STAT & self.I_MASK == 0 {
             // println!("Clearing interrupt!");
             self.system_control.borrow_mut().clear_interrupt();
@@ -33,27 +41,31 @@ impl Interrupt {
     pub fn write_mask32(&mut self, value: u32) {
         self.I_MASK = value & 0x7FF;
         println!("interrupt mask: {:08X}", self.I_MASK);
-    }
-
-    pub fn read_status16(&self) -> u16 {
-        self.I_STAT as u16
-    }
-
-    pub fn read_mask16(&self) -> u16 {
-        self.I_MASK as u16 & 0x7FF
-    }
-
-    pub fn acknowledge16(&mut self, value: u16) {
-        self.I_STAT &= ((value & 0x7FF) | 0xF800) as u32;
         if self.I_STAT & self.I_MASK == 0 {
             // println!("Clearing interrupt!");
             self.system_control.borrow_mut().clear_interrupt();
+        } else {
+            self.system_control.borrow_mut().request_interrupt();
         }
     }
 
     pub fn write_mask16(&mut self, value: u16) {
         self.I_MASK = value as u32;
         println!("interrupt mask: {:08X}", self.I_MASK);
+        if self.I_STAT & self.I_MASK == 0 {
+            // println!("Clearing interrupt!");
+            self.system_control.borrow_mut().clear_interrupt();
+        } else {
+            self.system_control.borrow_mut().request_interrupt();
+        }
+    }
+
+    pub fn acknowledge16(&mut self, value: u16) {
+        self.I_STAT &= (value & 0x7FF) as u32;
+        if self.I_STAT & self.I_MASK == 0 {
+            // println!("Clearing interrupt!");
+            self.system_control.borrow_mut().clear_interrupt();
+        }
     }
 
     pub fn request(&mut self, irq: IRQ) {

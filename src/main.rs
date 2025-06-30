@@ -53,6 +53,9 @@ fn main() -> Result<(), anyhow::Error> {
         if instruction {
             // sideload_exe(&mut cpu, interface.clone(), exe);
             cpu.tick();
+            timer.borrow_mut().tick();
+            dma.borrow_mut().tick();
+            cd_rom.borrow_mut().tick();
             if interface.borrow_mut().gpu.tick() {
                 let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
                 texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
@@ -73,10 +76,7 @@ fn main() -> Result<(), anyhow::Error> {
                 // frame_start = Instant::now();
             }
         }
-        timer.borrow_mut().tick();
         instruction = !instruction;
-        dma.borrow_mut().tick();
-        cd_rom.borrow_mut().tick();
     }
 }
 

@@ -102,7 +102,7 @@ pub struct GPU {
 }
 
 impl GPU {
-    pub fn new(interface: Rc<RefCell<Interrupt>>, timer: Rc<RefCell<Timer>>) -> Self {
+    pub fn new(interrupt: Rc<RefCell<Interrupt>>, timer: Rc<RefCell<Timer>>) -> Self {
         let vram = RAM::new(VRAM_SIZE);
 
         Self {
@@ -112,7 +112,7 @@ impl GPU {
             gp0_parameters: VecDeque::new(),
 
             gpu_read: 0,
-            gpu_status: GPUSTAT::from_bytes(0x1C00_0000u32.to_le_bytes()),
+            gpu_status: GPUSTAT::from_bytes(0x0400_0000u32.to_le_bytes()),
 
             drawing_area: (Vertex::default(), Vertex::default()),
             drawing_offset: Vertex::default(),
@@ -125,7 +125,7 @@ impl GPU {
             cycle: 566_203 - 516_687,
             even_odd_frame: false,
 
-            interrupt: interface,
+            interrupt,
             timer,
         }
     }
@@ -153,6 +153,13 @@ impl GPU {
     }
 
     pub fn read_gp1(&mut self) -> u32 {
+        self.gpu_status.set_ready_to_receive_cmd(match self.gp0_mode {
+            GP0_State::CommandStart
+            | GP0_State::ReceivingParameters {..}
+            | GP0_State::ReceivingPolyLineParameters {..} => 1,
+            _ => 0,
+        });
+        self.gpu_status.set_ready_to_receive_dma_block(1);
         self.gpu_status.set_drawing_even_odd_lines_in_interlace_mode((!self.even_odd_frame) as u8 & (1 >> (!self.gpu_status.vertical_interlace() & 1)));
         u32::from_le_bytes(self.gpu_status.bytes)
     }

@@ -46,6 +46,7 @@ impl SystemControl {
     }
 
     pub fn clear_interrupt(&mut self) {
+        // println!("Clearing interrupt!");
         self.R[13] &= !(1 << 10);
     }
 
@@ -57,7 +58,7 @@ impl SystemControl {
         let ip = (self.R[13] >> 8) & 0xFF;
         let im = (self.R[12] >> 8) & 0xFF;
 
-        self.R[13] & 1 != 0 && ip & im != 0
+        (self.R[12] & 1) == 1 && (ip & im) != 0
     }
 
     pub fn rfe(&mut self) {

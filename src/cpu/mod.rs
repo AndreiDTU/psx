@@ -81,7 +81,9 @@ impl CPU {
         self.commit_writes();
 
         if self.system_control.borrow().trigger_interrupt() {
+            println!("IRQ triggered!");
             self.raise_exception(Cause::INT);
+            return;
         }
         
         self.check_for_tty_output();

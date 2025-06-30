@@ -65,13 +65,13 @@ impl CD_ROM {
             self.irq_delay -= 1;
             if self.irq_delay == 0 {
                 self.interrupt.borrow_mut().request(IRQ::CDROM);
+                self.irq_delay = AVERAGE_IRQ_DELAY;
+                self.irq = false;
                 match self.second_response {
-                    SECOND_RESPONSE::None => {
-                        self.irq_delay = AVERAGE_IRQ_DELAY;
-                        self.irq = false;
-                    }
                     SECOND_RESPONSE::GetID => self.get_id_second_response(),
+                    _ => {}
                 }
+                self.second_response = SECOND_RESPONSE::None;
             }
         }
     }
@@ -100,12 +100,12 @@ impl CD_ROM {
             HINTSTS => self.registers[HINTSTS],
             _ => self.registers[register]
         };
-        println!("CDROM bank {} [{offset}] = {value:02X}", self.current_bank);
+        // println!("CDROM bank {} [{offset}] = {value:02X}", self.current_bank);
         value
     }
 
     pub fn write8(&mut self, offset: u32, value: u8) {
-        println!("CDROM bank {} [{offset}] <- {value:02X}", self.current_bank);
+        // println!("CDROM bank {} [{offset}] <- {value:02X}", self.current_bank);
         let register = WRITE_BANKS[self.current_bank][offset as usize];
         match register {
             ADDRESS => self.registers[ADDRESS] = (self.registers[ADDRESS] & !3) | (value & 3),
@@ -153,6 +153,8 @@ impl CD_ROM {
     }
 
     fn get_id_second_response(&mut self) {
+        self.result_idx = 0;
+        self.result_size = 8;
         *self.result_fifo[self.result_idx..].first_chunk_mut().unwrap() = NO_DISK;
         self.schedule_int(5);
         self.irq_delay = ID_SECOND_DELAY;

@@ -51,12 +51,10 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if mode & 0x20 != 0 && *enabled {
-                    println!("Timer IRQ");
                     self.interrupt.borrow_mut().request(IRQ::TMR0);
                     *enabled = mode & 0x40 != 0;
                 }
             } else if target_enabled && *counter == target {
-                println!("Timer IRQ");
                 *counter = 0;
                 if mode & 0x10 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR0);
@@ -80,12 +78,10 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if mode & 0x20 != 0 && *enabled {
-                    println!("Timer IRQ");
                     self.interrupt.borrow_mut().request(IRQ::TMR1);
                     *enabled = mode & 0x40 != 0;
                 }
             } else if target_enabled && *counter == target {
-                println!("Timer IRQ");
                 *counter = 0;
                 if mode & 0x10 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR1);
@@ -97,30 +93,28 @@ impl Timer {
 
     fn tick_counter_2(&mut self) {
         let counter = &mut self.counter[2];
-        let mode = self.mode[2];
+        let mode = &mut self.mode[2];
         let target = self.target[2];
-        let target_enabled = mode & 0x08 != 0;
+        let target_enabled = *mode & 0x08 != 0;
         let enabled = &mut self.irq_enabled[2];
-        let source = mode & 0x200 != 0;
+        let source = *mode & 0x200 != 0;
 
-        if mode & 1 != 0 {
+        if *mode & 1 != 0 {
             panic!("Timer 2 sync modes not implemented")
         } else if !source || self.sysclock_8 == 0 {
             self.sysclock_8 = 8;
             *counter += 1;
             if *counter == 0xFFFF {
                 *counter = 0;
-                if mode & 0x20 != 0 && *enabled {
-                    println!("Timer IRQ");
+                if *mode & 0x20 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR2);
-                    *enabled = mode & 0x40 != 0;
+                    *enabled = *mode & 0x40 != 0;
                 }
             } else if target_enabled && *counter == target {
-                println!("Timer IRQ");
                 *counter = 0;
-                if mode & 0x10 != 0 && *enabled {
+                if *mode & 0x10 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR2);
-                    *enabled = mode & 0x40 != 0;
+                    *enabled =* mode & 0x40 != 0;
                 }
             }
         } else {
@@ -132,7 +126,7 @@ impl Timer {
         let timer_idx = ((offset & 0x30) >> 4) as usize;
         match offset & 0xF {
             0x0 => {
-                println!("Timer {timer_idx}: {:04X}", self.counter[timer_idx]);
+                // println!("Timer {timer_idx}: {:04X}", self.counter[timer_idx]);
                 self.counter[timer_idx]
             }
             0x4 => {
