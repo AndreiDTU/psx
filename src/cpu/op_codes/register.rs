@@ -141,9 +141,9 @@ impl CPU {
     pub fn sltiu(&mut self, instruction: u32) {
         let rs = instruction.rs();
         let rt = instruction.rt();
-        let imm = instruction.imm();
+        let imm = instruction.imm_se();
 
-        let value = if self.R[rs] < imm {1} else {0};
+        let value = (self.R[rs] < imm) as u32;
         self.write_register(rt, value);
     }
 

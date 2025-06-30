@@ -4,7 +4,7 @@ use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
-const DRAM_END: u32 = DRAM_START + DRAM_SIZE as u32;
+const DRAM_END: u32 = DRAM_START + DRAM_SIZE as u32 * 4;
 
 const EXPANSION_1_START: u32 = 0x1F00_0000;
 const EXPANSION_1_END: u32 = EXPANSION_1_START + 0x80000;
@@ -15,6 +15,9 @@ const SCRATCHPAD_END: u32 = SCRATCHPAD_START + SCRATCHPAD_SIZE as u32;
 
 const MEM_CTRL_START: u32 = 0x1F80_1000;
 const MEM_CTRL_END: u32 = MEM_CTRL_START + 0x24;
+
+const PERIPHERAL_START: u32 = 0x1F801040;
+const PERIPHERAL_END: u32 = PERIPHERAL_START + 0x20;
 
 const MEM_CTRL_2_START: u32 = 0x1F80_1060;
 const MEM_CTRL_2_END: u32 = MEM_CTRL_2_START + 4;
@@ -79,10 +82,11 @@ impl Interface {
         
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.read32(addr - DRAM_START),
+            DRAM_START..DRAM_END => self.dram.read32((addr - DRAM_START) & 0x3FFFFFF),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -119,6 +123,7 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.read16(addr - DRAM_START),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read16(addr - SCRATCHPAD_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -145,6 +150,7 @@ impl Interface {
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => 0,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => 0,
@@ -162,6 +168,7 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write32(addr - SCRATCHPAD_START, value),
             MEM_CTRL_START..MEM_CTRL_END => {},
+            PERIPHERAL_START..PERIPHERAL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write32(addr - TIMER_START, value),
             CD_ROM_START..CD_ROM_END => {},
@@ -185,7 +192,7 @@ impl Interface {
             VOICE_START..VOICE_END => {},
             SPU_START..SPU_END => {},
             REVERB_START..REVERB_END => {},
-            CACHE_CONTROL_START..CACHE_CONTROL_END => {
+            CACHE_CONTROL_START..=CACHE_CONTROL_END => {
                 // println!("Write to CACHE_CONTROL")
             }
             _ => panic!("Write access at unmapped address: {:08X}", addr),
@@ -200,6 +207,7 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.write16(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write16(addr - SCRATCHPAD_START, value),
             MEM_CTRL_START..MEM_CTRL_END => {},
+            PERIPHERAL_START..PERIPHERAL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write16(addr - TIMER_START, value),
             CD_ROM_START..CD_ROM_END => {},
@@ -224,6 +232,7 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.write8(addr - DRAM_START, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
             MEM_CTRL_START..MEM_CTRL_END => {},
+            PERIPHERAL_START..PERIPHERAL_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().write8(addr - CD_ROM_START, value),
             VOICE_START..VOICE_END => {},

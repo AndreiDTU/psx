@@ -11,7 +11,7 @@ pub mod primitives;
 mod commands;
 
 #[bitfield]
-pub struct GPUSTAT {
+struct GPUSTAT {
     texture_page_x_base: B4,
     texture_page_y_base_1: B1,
     semi_transparency: B2,
@@ -57,6 +57,7 @@ pub enum ParametrizedCommand {
     VRAM_CPU_Copy,
     Polygon(u32),
     Line(u32),
+    Rectangle(u32),
 }
 
 #[derive(PartialEq, Clone, Copy)]
@@ -164,10 +165,7 @@ impl GPU {
                 match word >> 29 {
                     1 => self.set_polygon_state(word),
                     2 => self.set_line_state(word),
-                    3 => {
-                        println!("draw rectangle {word:08X}");
-                        GP0_State::CommandStart
-                    }
+                    3 => self.set_rectangle_state(word),
                     4 => {
                         println!("VRAM-to-VRAM copy {word:08X}");
                         GP0_State::CommandStart
@@ -229,6 +227,15 @@ impl GPU {
                                 0x52 => self.draw_transparent_gouraud_line(word),
                                 _ => {
                                     println!("Line command not implemented: {word:08X}");
+                                    GP0_State::CommandStart
+                                }
+                            }
+                        }
+                        ParametrizedCommand::Rectangle(word) => {
+                            match (word >> 24) as u8 {
+                                0x68 => self.draw_single_pixel_monochrome_rect(word),
+                                _ => {
+                                    println!("Rectangle command not implemented: {word:08X}");
                                     GP0_State::CommandStart
                                 }
                             }

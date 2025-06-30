@@ -19,16 +19,19 @@ impl Interrupt {
     }
 
     pub fn read_mask32(&self) -> u32 {
-        self.I_MASK & 0x3FF
+        self.I_MASK & 0x7FF
     }
 
     pub fn acknowledge32(&mut self, value: u32) {
-        self.I_STAT &= !(value);
+        self.I_STAT &= (value & 0x7FF) | 0xF800;
+        if self.I_STAT & self.I_MASK == 0 {
+            self.system_control.borrow_mut().clear_interrupt();
+        }
     }
 
     pub fn write_mask32(&mut self, value: u32) {
         self.I_MASK = value & 0x7FF;
-        println!("interrupt mask: {:08X}", self.I_MASK);
+        // println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn read_status16(&self) -> u16 {
@@ -36,22 +39,25 @@ impl Interrupt {
     }
 
     pub fn read_mask16(&self) -> u16 {
-        self.I_MASK as u16 & 0x3FF
+        self.I_MASK as u16 & 0x7FF
     }
 
     pub fn acknowledge16(&mut self, value: u16) {
-        self.I_STAT &= !(value as u32);
+        self.I_STAT &= ((value & 0x7FF) | 0xF800) as u32;
+        if self.I_STAT & self.I_MASK == 0 {
+            self.system_control.borrow_mut().clear_interrupt();
+        }
     }
 
     pub fn write_mask16(&mut self, value: u16) {
         self.I_MASK = value as u32;
-        println!("interrupt mask: {:08X}", self.I_MASK);
+        // println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn request(&mut self, irq: IRQ) {
-        if irq != IRQ::VBLANK {println!("IRQ: {irq:#?}")};
+        // if irq != IRQ::VBLANK || true {println!("IRQ: {irq:#?}")};
         self.I_STAT |= self.I_MASK & irq as u32;
-        if self.I_STAT != 0 {
+        if self.I_STAT & 0x7FF != 0 {
             self.system_control.borrow_mut().request_interrupt();
         }
     }

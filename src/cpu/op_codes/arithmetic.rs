@@ -8,7 +8,17 @@ impl CPU {
         let dividend = self.R[rs] as i32;
         let divisor = self.R[rt] as i32;
 
-        if divisor == 0 {return}
+        if divisor == 0 {
+            self.hi = dividend as u32;
+            
+            self.lo = if dividend >= 0 {
+                0xFFFF_FFFF
+            } else {
+                1
+            };
+
+            return;
+        }
         if dividend == i32::MIN && divisor == -1 {
             (self.lo, self.hi) = (i32::MIN as u32, 0);
             return;
@@ -51,7 +61,11 @@ impl CPU {
         let dividend = self.R[rs];
         let divisor = self.R[rt];
 
-        if divisor == 0 {return}
+        if divisor == 0 {
+            self.hi = dividend;
+            self.lo = 0xFFFF_FFFF;
+            return;
+        }
 
         (self.lo, self.hi) = (dividend / divisor, dividend % divisor);
     }

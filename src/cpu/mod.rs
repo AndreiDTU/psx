@@ -59,6 +59,12 @@ impl CPU {
         self.stalled &= *self.dma_running.borrow();
         if self.stalled {return}
 
+        self.current_pc = self.pc;
+
+        if self.current_pc & 0b11 != 0 {
+            self.raise_exception(Cause::AdEL);
+        }
+
         let instruction = self.read32(self.pc);
         if self.stalled {
             println!("Stalled!");
@@ -67,12 +73,6 @@ impl CPU {
 
         self.delay_slot = self.branch;
         self.branch = false;
-
-        self.current_pc = self.pc;
-
-        if self.current_pc & 0b11 != 0 {
-            self.raise_exception(Cause::AdEL);
-        }
 
         self.pc = self.next_pc;
         self.next_pc = self.next_pc.wrapping_add(4);
@@ -84,7 +84,7 @@ impl CPU {
             self.raise_exception(Cause::INT);
         }
         
-        // self.check_for_tty_output();
+        self.check_for_tty_output();
     }
 
     pub fn execute(&mut self, instruction: u32) {

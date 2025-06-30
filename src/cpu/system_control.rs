@@ -39,6 +39,10 @@ impl SystemControl {
         handler
     }
 
+    pub fn clear_interrupt(&mut self) {
+        self.R[13] &= !(1 << 10);
+    }
+
     pub fn request_interrupt(&mut self) {
         self.R[13] |= 1 << 10;
     }
