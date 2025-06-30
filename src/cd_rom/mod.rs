@@ -1,10 +1,26 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use bitflags::bitflags;
+
 use crate::bus::interrupt::{Interrupt, IRQ};
 
 const AVERAGE_IRQ_DELAY: usize = 50000;
 
+bitflags! {
+    pub struct CD_ROM_STATUS: u8 {
+        const PLAY     = 0x80;
+        const SEEK     = 0x40;
+        const READ     = 0x20;
+        const SHELL    = 0x10;
+        const ID_ERR   = 0x08;
+        const SEEK_ERR = 0x04;
+        const SPINDLE  = 0x02;
+        const ERROR    = 0x01;
+    }
+}
+
 pub struct CD_ROM {
+    status: CD_ROM_STATUS,
     registers: [u8; 16],
     current_bank: usize,
 
@@ -24,6 +40,7 @@ pub struct CD_ROM {
 impl CD_ROM {
     pub fn new(interrupt: Rc<RefCell<Interrupt>>) -> Self {
         Self {
+            status: CD_ROM_STATUS::from_bits_truncate(0),
             registers: [0; 16],
             current_bank: 0,
 
@@ -104,9 +121,19 @@ impl CD_ROM {
     fn execute(&mut self, command: u8) {
         println!("CD-ROM command: {command:02X}");
         match command {
+            0x01 => self.send_status(),
             0x19 => self.test(),
             _ => panic!("CD-ROM command not yet implemented. {command:02X}"),
         }
+    }
+
+    fn send_status(&mut self) {
+        self.status.insert(CD_ROM_STATUS::SHELL);
+        self.result_fifo[self.result_idx] = self.status.bits();
+        self.result_size = 0;
+        self.result_fifo_empty = false;
+
+        self.int3();
     }
 
     fn test(&mut self) {
