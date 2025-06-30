@@ -1,4 +1,4 @@
-use crate::Registers;
+use crate::{cpu::decoder::Cause, Registers};
 
 pub struct SystemControl {
     R: Registers<64>
@@ -21,20 +21,26 @@ impl SystemControl {
         self.R[register]
     }
 
-    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, delay_slot: bool) -> bool {
-        let handler = self.R[12] & (1 << 22) != 0;
+    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, pc: u32, delay_slot: bool) -> bool {
+        let handler = self.R[12] & 0x40_0000 != 0;
+
+        let pc = if cause == Cause::INT as u32 {pc} else {current_pc};
+
+        let old = self.R[13] & 0x300;
+        self.R[13] = cause << 2;
+        self.R[13] |= old;
+
+        if delay_slot {
+            self.R[13] |= 1 << 31;
+            self.R[14] = pc.wrapping_sub(4);
+        } else {
+            self.R[13] &= !(1 << 31);
+            self.R[14] = pc;
+        }
 
         let mode = self.R[12] & 0x3F;
         self.R[12] &= !0x3F;
         self.R[12] |= (mode << 2) & 0x3F;
-
-        self.R[13] = cause << 2;
-        self.R[14] = current_pc;
-
-        if delay_slot {
-            self.R[14] = self.R[14].wrapping_sub(4);
-            self.R[13] |= 1 << 31;
-        }
 
         handler
     }
@@ -48,7 +54,10 @@ impl SystemControl {
     }
 
     pub fn trigger_interrupt(&self) -> bool {
-        self.R[13] & (1 << 10) != 0 && self.R[12] & 0x401 == 0x401
+        let ip = (self.R[13] >> 8) & 0xFF;
+        let im = (self.R[12] >> 8) & 0xFF;
+
+        self.R[13] & 1 != 0 && ip & im != 0
     }
 
     pub fn rfe(&mut self) {

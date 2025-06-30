@@ -59,7 +59,7 @@ impl Interrupt {
     pub fn request(&mut self, irq: IRQ) {
         self.I_STAT |= irq as u32;
         if (self.I_STAT & self.I_MASK) & 0x7FF != 0 {
-            println!("IRQ: {irq:#?}");
+            // println!("IRQ: {irq:#?}");
             self.system_control.borrow_mut().request_interrupt();
         }
     }

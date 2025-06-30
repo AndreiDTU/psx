@@ -48,7 +48,7 @@ impl Instruction for u32 {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Cause {
     INT = 0x00,
     AdEL = 0x04,

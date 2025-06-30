@@ -20,8 +20,8 @@ const VRAM_HEIGHT: u32 = 512;
 // const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("VBLANK.exe").unwrap();
-    // let exe = exe_binding.as_slice();
+    let exe_binding = std::fs::read("VBLANK.exe").unwrap();
+    let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -50,8 +50,8 @@ fn main() -> Result<(), anyhow::Error> {
     // let mut frame_start = Instant::now();
 
     loop {
-        // sideload_exe(&mut cpu, interface.clone(), exe);
         if instruction {
+            // sideload_exe(&mut cpu, interface.clone(), exe);
             cpu.tick();
             if interface.borrow_mut().gpu.tick() {
                 let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
