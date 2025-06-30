@@ -5,6 +5,7 @@ use bitflags::bitflags;
 use crate::bus::interrupt::{Interrupt, IRQ};
 
 const AVERAGE_IRQ_DELAY: usize = 50000;
+const ID_SECOND_DELAY: usize = 0x4A00;
 
 bitflags! {
     pub struct CD_ROM_STATUS: u8 {
@@ -30,6 +31,7 @@ pub struct CD_ROM {
     result_idx: usize,
     result_size: usize,
     result_fifo_empty: bool,
+    second_response: SECOND_RESPONSE,
 
     irq_delay: usize,
     irq: bool,
@@ -49,6 +51,7 @@ impl CD_ROM {
             result_idx: 0,
             result_size: 0,
             result_fifo_empty: false,
+            second_response: SECOND_RESPONSE::None,
 
             irq_delay: AVERAGE_IRQ_DELAY,
             irq: false,
@@ -62,8 +65,13 @@ impl CD_ROM {
             self.irq_delay -= 1;
             if self.irq_delay == 0 {
                 self.interrupt.borrow_mut().request(IRQ::CDROM);
-                self.irq_delay = AVERAGE_IRQ_DELAY;
-                self.irq = false;
+                match self.second_response {
+                    SECOND_RESPONSE::None => {
+                        self.irq_delay = AVERAGE_IRQ_DELAY;
+                        self.irq = false;
+                    }
+                    SECOND_RESPONSE::GetID => self.get_id_second_response(),
+                }
             }
         }
     }
@@ -122,6 +130,7 @@ impl CD_ROM {
         println!("CD-ROM command: {command:02X}");
         match command {
             0x01 => self.send_status(),
+            0x1A => self.get_id(),
             0x19 => self.test(),
             _ => panic!("CD-ROM command not yet implemented. {command:02X}"),
         }
@@ -133,7 +142,18 @@ impl CD_ROM {
         self.result_size = 0;
         self.result_fifo_empty = false;
 
-        self.int3();
+        self.schedule_int(3);
+    }
+
+    fn get_id(&mut self) {
+        self.status.insert(CD_ROM_STATUS::SHELL);
+        self.send_status();
+    }
+
+    fn get_id_second_response(&mut self) {
+        *self.result_fifo[self.result_idx..].first_chunk_mut().unwrap() = NO_DISK;
+        self.schedule_int(5);
+        self.irq_delay = ID_SECOND_DELAY;
     }
 
     fn test(&mut self) {
@@ -150,11 +170,11 @@ impl CD_ROM {
         self.result_size = 3;
         self.result_fifo_empty = false;
 
-        self.int3();
+        self.schedule_int(3);
     }
 
-    fn int3(&mut self) {
-        self.registers[HINTSTS] = (self.registers[HINTSTS] & !7) | 3;
+    fn schedule_int(&mut self, int: u8) {
+        self.registers[HINTSTS] = (self.registers[HINTSTS] & !7) | int;
         
         if self.registers[HINTMSK] & self.registers[HINTSTS] != 0 {
             self.irq = true;
@@ -195,3 +215,9 @@ const ATV3:      usize = 14;
 const ADPCTL:    usize = 15;
 
 const VERSION: [u8; 4] = [0x94, 0x09, 0x19, 0xC0];
+const NO_DISK: [u8; 8] = [0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+
+enum SECOND_RESPONSE {
+    None,
+    GetID,
+}
