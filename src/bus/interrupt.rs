@@ -32,7 +32,7 @@ impl Interrupt {
 
     pub fn write_mask32(&mut self, value: u32) {
         self.I_MASK = value & 0x7FF;
-        // println!("interrupt mask: {:08X}", self.I_MASK);
+        println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn read_status16(&self) -> u16 {
@@ -53,13 +53,13 @@ impl Interrupt {
 
     pub fn write_mask16(&mut self, value: u16) {
         self.I_MASK = value as u32;
-        // println!("interrupt mask: {:08X}", self.I_MASK);
+        println!("interrupt mask: {:08X}", self.I_MASK);
     }
 
     pub fn request(&mut self, irq: IRQ) {
-        self.I_STAT |= self.I_MASK & irq as u32;
-        if self.I_STAT & 0x7FF != 0 {
-            // println!("IRQ: {irq:#?}");
+        self.I_STAT |= irq as u32;
+        if (self.I_STAT & self.I_MASK) & 0x7FF != 0 {
+            println!("IRQ: {irq:#?}");
             self.system_control.borrow_mut().request_interrupt();
         }
     }

@@ -142,6 +142,7 @@ impl DMA {
                 };
             } else {
                 let value = match channel {
+                    2 => self.interface.borrow_mut().read32(0x1F80_1810),
                     6 => match remaining_size {
                         1 => 0x00FF_FFFF,
                         _ => addr.wrapping_sub(4) & 0x001F_FFFF,

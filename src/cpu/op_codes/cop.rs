@@ -27,14 +27,14 @@ impl CPU {
     }
 
     pub fn cop2(&mut self, instruction: u32) {
-        panic!("{:08X}, GTE not yet implemented!", instruction);
+        println!("{:08X}, GTE not yet implemented!", instruction);
     }
 
     pub fn lwc2(&mut self, instruction: u32) {
-        panic!("{:08X}, GTE not yet implemented!", instruction);
+        println!("{:08X}, GTE not yet implemented!", instruction);
     }
 
     pub fn swc2(&mut self, instruction: u32) {
-        panic!("{:08X}, GTE not yet implemented!", instruction);
+        println!("{:08X}, GTE not yet implemented!", instruction);
     }
 }
