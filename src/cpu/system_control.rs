@@ -53,7 +53,9 @@ impl SystemControl {
 
     pub fn rfe(&mut self) {
         let mode = self.R[12] & 0x3F;
+        let old = self.R[12] & 0x30;
         self.R[12] &= !0x3F;
         self.R[12] |= mode >> 2;
+        self.R[12] |= old;
     }
 }

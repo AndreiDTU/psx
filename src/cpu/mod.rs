@@ -241,7 +241,12 @@ impl CPU {
     }
 
     fn schedule_write(&mut self, register: u32, value: u32) {
-        self.pending_writes[1] = Some((register, value))
+        self.pending_writes[1] = Some((register, value));
+        if let Some((other_register, _)) = self.pending_writes[0] {
+            if other_register == register {
+                self.pending_writes[0] = None;
+            }
+        }
     }
 
     fn commit_writes(&mut self) {
