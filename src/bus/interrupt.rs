@@ -25,6 +25,7 @@ impl Interrupt {
     pub fn acknowledge32(&mut self, value: u32) {
         self.I_STAT &= (value & 0x7FF) | 0xF800;
         if self.I_STAT & self.I_MASK == 0 {
+            // println!("Clearing interrupt!");
             self.system_control.borrow_mut().clear_interrupt();
         }
     }
@@ -45,6 +46,7 @@ impl Interrupt {
     pub fn acknowledge16(&mut self, value: u16) {
         self.I_STAT &= ((value & 0x7FF) | 0xF800) as u32;
         if self.I_STAT & self.I_MASK == 0 {
+            // println!("Clearing interrupt!");
             self.system_control.borrow_mut().clear_interrupt();
         }
     }
@@ -55,15 +57,15 @@ impl Interrupt {
     }
 
     pub fn request(&mut self, irq: IRQ) {
-        // if irq != IRQ::VBLANK || true {println!("IRQ: {irq:#?}")};
         self.I_STAT |= self.I_MASK & irq as u32;
         if self.I_STAT & 0x7FF != 0 {
+            // println!("IRQ: {irq:#?}");
             self.system_control.borrow_mut().request_interrupt();
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum IRQ {
     VBLANK        = 0x001,
     GPU           = 0x002,

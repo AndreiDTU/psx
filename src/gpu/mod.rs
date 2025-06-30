@@ -122,7 +122,7 @@ impl GPU {
 
             tex_window: 0,
 
-            cycle: 0,
+            cycle: 566_203 - 516_687,
             even_odd_frame: false,
 
             interrupt: interface,
@@ -132,7 +132,7 @@ impl GPU {
 
     pub fn tick(&mut self) -> bool {
         self.cycle += 1;
-        if self.cycle == 564_480 {
+        if self.cycle == 566_203 {
             self.cycle = 0;
 
             self.even_odd_frame = !self.even_odd_frame;

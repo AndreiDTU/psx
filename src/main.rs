@@ -20,8 +20,8 @@ const VRAM_HEIGHT: u32 = 512;
 // const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    let exe_binding = std::fs::read("psxtest_cpu.exe").unwrap();
-    let exe = exe_binding.as_slice();
+    // let exe_binding = std::fs::read("VBLANK.exe").unwrap();
+    // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -50,33 +50,34 @@ fn main() -> Result<(), anyhow::Error> {
     // let mut frame_start = Instant::now();
 
     loop {
-        sideload_exe(&mut cpu, interface.clone(), exe);
+        // sideload_exe(&mut cpu, interface.clone(), exe);
         if instruction {
             cpu.tick();
+            if interface.borrow_mut().gpu.tick() {
+                let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
+                texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
+
+                canvas.clear();
+                canvas.copy(&texture, None, None).unwrap();
+                canvas.present();
+
+                for event in event_pump.poll_iter() {
+                    match event {
+                        Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
+                        _ => {}
+                    }
+                }
+
+                // let frame_time = frame_start.elapsed();
+                // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
+                // frame_start = Instant::now();
+            }
         }
         instruction = !instruction;
+        
         timer.borrow_mut().tick();
         dma.borrow_mut().tick();
         cd_rom.borrow_mut().tick();
-        if interface.borrow_mut().gpu.tick() {
-            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
-            texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
-
-            canvas.clear();
-            canvas.copy(&texture, None, None).unwrap();
-            canvas.present();
-
-            for event in event_pump.poll_iter() {
-                match event {
-                    Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
-                    _ => {}
-                }
-            }
-
-            // let frame_time = frame_start.elapsed();
-            // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
-            // frame_start = Instant::now();
-        }
     }
 }
 

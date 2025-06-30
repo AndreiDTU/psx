@@ -67,7 +67,7 @@ impl CPU {
 
         let instruction = self.read32(self.pc);
         if self.stalled {
-            println!("Stalled!");
+            // println!("Stalled!");
             return
         }
 
