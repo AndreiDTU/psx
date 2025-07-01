@@ -11,9 +11,11 @@ impl SystemControl {
     }
 
     pub fn write_register(&mut self, register: u32, value: u32) {
+        self.R[15] = 2;
         match register {
             3 | 5 | 7 | 9 | 11 | 12 =>
                 self.R[register] = value,
+            13 => self.R[register] |= value & 0x300,
             _ => {}
         }
     }
@@ -22,20 +24,19 @@ impl SystemControl {
         self.R[register]
     }
 
-    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, delay_slot: bool) -> bool {
+    pub fn raise_exception(&mut self, cause: u32, current_pc: u32, next_pc: u32, delay_slot: bool) -> bool {
         let handler = self.R[12] & 0x40_0000 != 0;
 
-        let old = self.R[13] & 0x300;
         self.R[13] = cause << 2;
-        self.R[13] |= old;
 
         if delay_slot {
-            println!("{:02X} in delay slot", cause);
-            self.R[13] |= 1 << 31;
+            // println!("{:02X} in delay slot", cause);
+            self.R[13] |= 0xC000_0000;
+            self.R[6] = next_pc;
             self.R[14] = current_pc.wrapping_sub(4);
         } else {
-            println!("{:02X} not in delay slot", cause);
-            self.R[13] &= !(1 << 31);
+            // println!("{:02X} not in delay slot", cause);
+            self.R[13] &= !0xC000_0000;
             self.R[14] = current_pc;
         }
 
@@ -56,14 +57,14 @@ impl SystemControl {
     }
 
     pub fn trigger_interrupt(&self) -> bool {
-        let ip = (self.R[13] >> 8) & 0xFF;
-        let im = (self.R[12] >> 8) & 0xFF;
+        let ip = (self.R[13] >> 10) & 0xFF;
+        let im = (self.R[12] >> 10) & 0xFF;
 
         (self.R[12] & 1) == 1 && (ip & im) != 0
     }
 
     pub fn rfe(&mut self) {
-        println!("RFE! cop0 {:08X}", self.R[12]);
+        // println!("RFE! cop0 {:08X}", self.R[12]);
         let mode = self.R[12] & 0x3F;
         let old = self.R[12] & 0x30;
         self.R[12] &= !0x3F;

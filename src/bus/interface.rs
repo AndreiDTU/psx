@@ -85,7 +85,10 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => {
+                println!("PERIPHERAL 32-bit read");
+                0
+            },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -122,7 +125,10 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.read16(addr - DRAM_START),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read16(addr - SCRATCHPAD_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => {
+                println!("PERIPHERAL 16-bit read");
+                0
+            },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -149,7 +155,10 @@ impl Interface {
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0,
+            PERIPHERAL_START..PERIPHERAL_END => {
+                println!("PERIPHERAL 8-bit read");
+                0
+            },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => 0,

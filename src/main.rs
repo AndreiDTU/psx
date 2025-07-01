@@ -53,28 +53,28 @@ fn main() -> Result<(), anyhow::Error> {
         if instruction {
             // sideload_exe(&mut cpu, interface.clone(), exe);
             cpu.tick();
-            timer.borrow_mut().tick();
-            dma.borrow_mut().tick();
-            cd_rom.borrow_mut().tick();
-            if interface.borrow_mut().gpu.tick() {
-                let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
-                texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
+        }
+        timer.borrow_mut().tick();
+        dma.borrow_mut().tick();
+        cd_rom.borrow_mut().tick();
+        if interface.borrow_mut().gpu.tick() {
+            let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
+            texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
 
-                canvas.clear();
-                canvas.copy(&texture, None, None).unwrap();
-                canvas.present();
+            canvas.clear();
+            canvas.copy(&texture, None, None).unwrap();
+            canvas.present();
 
-                for event in event_pump.poll_iter() {
-                    match event {
-                        Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
-                        _ => {}
-                    }
+            for event in event_pump.poll_iter() {
+                match event {
+                    Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
+                    _ => {}
                 }
-
-                // let frame_time = frame_start.elapsed();
-                // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
-                // frame_start = Instant::now();
             }
+
+            // let frame_time = frame_start.elapsed();
+            // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
+            // frame_start = Instant::now();
         }
         instruction = !instruction;
     }

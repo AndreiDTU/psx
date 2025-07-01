@@ -107,13 +107,13 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if *mode & 0x20 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR2);
+                    // self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = *mode & 0x40 != 0;
                 }
             } else if target_enabled && *counter == target {
                 *counter = 0;
                 if *mode & 0x10 != 0 && *enabled {
-                    self.interrupt.borrow_mut().request(IRQ::TMR2);
+                    // self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled =* mode & 0x40 != 0;
                 }
             }
