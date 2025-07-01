@@ -81,13 +81,13 @@ impl Interface {
         
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.read32((addr - DRAM_START) & 0x3FFFFFF),
+            DRAM_START..DRAM_END => self.dram.read32((addr - DRAM_START) & 0x1FFFFF),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
             PERIPHERAL_START..PERIPHERAL_END => {
                 println!("PERIPHERAL 32-bit read");
-                0
+                0xFF
             },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
@@ -122,12 +122,12 @@ impl Interface {
         
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.read16(addr - DRAM_START),
+            DRAM_START..DRAM_END => self.dram.read16((addr - DRAM_START) & 0x1FFFFF),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read16(addr - SCRATCHPAD_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
             PERIPHERAL_START..PERIPHERAL_END => {
                 println!("PERIPHERAL 16-bit read");
-                0
+                0xFF
             },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
@@ -143,6 +143,7 @@ impl Interface {
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
+            CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 16-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -150,20 +151,21 @@ impl Interface {
     pub fn read8(&mut self, addr: u32) -> u8 {
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.read8(addr - DRAM_START),
+            DRAM_START..DRAM_END => self.dram.read8((addr - DRAM_START) & 0x1FFFFF),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read8(addr - SCRATCHPAD_START),
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
             PERIPHERAL_START..PERIPHERAL_END => {
                 println!("PERIPHERAL 8-bit read");
-                0
+                0xFF
             },
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
+            CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),
         }
     }
@@ -173,8 +175,9 @@ impl Interface {
 
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.write32(addr - DRAM_START, value),
+            DRAM_START..DRAM_END => self.dram.write32((addr - DRAM_START) & 0x1FFFFF, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write32(addr - SCRATCHPAD_START, value),
+            BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
             PERIPHERAL_START..PERIPHERAL_END => println!("PERIPHERAL 32-bit write {value:08X}"),
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
@@ -212,8 +215,9 @@ impl Interface {
 
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.write16(addr - DRAM_START, value),
+            DRAM_START..DRAM_END => self.dram.write16((addr - DRAM_START) & 0x1FFFFF, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write16(addr - SCRATCHPAD_START, value),
+            BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
             PERIPHERAL_START..PERIPHERAL_END => println!("PERIPHERAL 16-bit write {value:04X}"),
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
@@ -237,8 +241,9 @@ impl Interface {
     pub fn write8(&mut self, addr: u32, value: u8) {
         let addr = mask_region(addr);
         match addr {
-            DRAM_START..DRAM_END => self.dram.write8(addr - DRAM_START, value),
+            DRAM_START..DRAM_END => self.dram.write8((addr - DRAM_START) & 0x1FFFFF, value),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
+            BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
             PERIPHERAL_START..PERIPHERAL_END => println!("PERIPHERAL 8-bit write {value:02X}"),
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},

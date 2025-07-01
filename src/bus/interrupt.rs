@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::cpu::system_control::SystemControl;
 
+#[derive(Debug)]
 pub struct Interrupt {
     I_STAT: u32,
     I_MASK: u32,
@@ -73,7 +74,7 @@ impl Interrupt {
             // println!("Clearing interrupt!");
             self.system_control.borrow_mut().clear_interrupt();
         } else if self.I_STAT & self.I_MASK & 0x7FF != old_irq {
-            println!("Requesting interrupt!");
+            // println!("Requesting interrupt!");
             self.system_control.borrow_mut().request_interrupt();
         }
     }

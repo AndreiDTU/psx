@@ -77,13 +77,14 @@ impl CPU {
         self.pc = self.next_pc;
         self.next_pc = self.next_pc.wrapping_add(4);
 
+        if self.system_control.borrow().trigger_interrupt() {
+            // println!("IRQ triggered!");
+            self.raise_exception(Cause::INT);
+            return;
+        }
+
         self.execute(instruction);
         self.commit_writes();
-
-        if self.system_control.borrow().trigger_interrupt() {
-            println!("IRQ triggered!");
-            self.raise_exception(Cause::INT);
-        }
         
         self.check_for_tty_output();
     }
@@ -180,10 +181,11 @@ impl CPU {
         // println!("Raised exception on cause: {:#?}", cause);
 
         if cause == Cause::INT {
-            self.current_pc = self.pc;
+            self.pc = self.current_pc;
+            self.next_pc = self.next_pc.wrapping_sub(4);
         }
 
-        self.pc = if self.system_control.borrow_mut().raise_exception(cause as u32, self.current_pc, self.next_pc, self.delay_slot) {
+        self.pc = if self.system_control.borrow_mut().raise_exception(cause as u32, self.current_pc, self.pc, self.delay_slot) {
             0xBFC0_0180
         } else {
             0x8000_0080

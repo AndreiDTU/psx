@@ -2,6 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::bus::interrupt::{Interrupt, IRQ};
 
+#[derive(Debug)]
 pub struct Timer {
     counter: [u32; 3],
     mode: [u32; 3],
@@ -95,7 +96,7 @@ impl Timer {
         let counter = &mut self.counter[2];
         let mode = &mut self.mode[2];
         let target = self.target[2];
-        let target_enabled = *mode & 0x08 != 0;
+        let target_enabled = *mode & 0x10 != 0;
         let enabled = &mut self.irq_enabled[2];
         let source = *mode & 0x200 != 0;
 
@@ -104,17 +105,22 @@ impl Timer {
         } else if !source || self.sysclock_8 == 0 {
             self.sysclock_8 = 8;
             *counter += 1;
+            // let old_counter_2 = *counter;
             if *counter == 0xFFFF {
                 *counter = 0;
                 if *mode & 0x20 != 0 && *enabled {
                     // self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = *mode & 0x40 != 0;
+                    *mode |= 0x1000;
+                    // println!("Timer 2 IRQ. Timer 2 before: {:04X}", old_counter_2);
                 }
             } else if target_enabled && *counter == target {
                 *counter = 0;
                 if *mode & 0x10 != 0 && *enabled {
                     // self.interrupt.borrow_mut().request(IRQ::TMR2);
-                    *enabled =* mode & 0x40 != 0;
+                    *enabled = *mode & 0x40 != 0;
+                    *mode |= 0x0800;
+                    // println!("Timer 2 IRQ. Timer 2 target: {:04X}. Timer 2 before: {:04X}", self.target[2], old_counter_2);
                 }
             }
         } else {
