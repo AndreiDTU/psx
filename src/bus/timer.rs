@@ -109,7 +109,7 @@ impl Timer {
             if *counter == 0xFFFF {
                 *counter = 0;
                 if *mode & 0x20 != 0 && *enabled {
-                    // self.interrupt.borrow_mut().request(IRQ::TMR2);
+                    self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = *mode & 0x40 != 0;
                     *mode |= 0x1000;
                     // println!("Timer 2 IRQ. Timer 2 before: {:04X}", old_counter_2);
@@ -117,7 +117,7 @@ impl Timer {
             } else if target_enabled && *counter == target {
                 *counter = 0;
                 if *mode & 0x10 != 0 && *enabled {
-                    // self.interrupt.borrow_mut().request(IRQ::TMR2);
+                    self.interrupt.borrow_mut().request(IRQ::TMR2);
                     *enabled = *mode & 0x40 != 0;
                     *mode |= 0x0800;
                     // println!("Timer 2 IRQ. Timer 2 target: {:04X}. Timer 2 before: {:04X}", self.target[2], old_counter_2);
@@ -150,7 +150,7 @@ impl Timer {
         let timer_idx = (offset >> 4) as usize;
         match offset & 0xF {
             0x0 => {
-                println!("Timer {timer_idx}: {:04X}", self.counter[timer_idx] as u16);
+                // println!("Timer {timer_idx}: {:04X}", self.counter[timer_idx] as u16);
                 self.counter[timer_idx] as u16
             }
             0x4 => {
