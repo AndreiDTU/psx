@@ -63,7 +63,7 @@ impl GPU {
         let GP0_State::ReceivingData(mut fields) = self.gp0_mode else {unreachable!()};
 
         for i in 0..=1 {
-            let halfword = (word >> (16 * i)) as u16;
+            let halfword = (word >> (i << 4)) as u16;
 
             let vram_row = ((fields.vram_y + fields.current_row) & 0x1FF) as u32;
             let vram_col = ((fields.vram_x + fields.current_col) & 0x3FF) as u32;
@@ -115,23 +115,27 @@ impl GPU {
 
     pub fn process_vram_cpu_copy(&mut self) {
         let Some(GP0_State::SendingData(mut fields)) = self.gpu_read_transfer else {unreachable!()};
+        self.gpu_read = 0;
 
-        let vram_row = ((fields.vram_y + fields.current_row) & 0x1FF) as u32;
-        let vram_col = ((fields.vram_x + fields.current_col) & 0x3FF) as u32;
+        for i in 0..=1 {
+            let vram_row = ((fields.vram_y + fields.current_row) & 0x1FF) as u32;
+            let vram_col = ((fields.vram_x + fields.current_col) & 0x3FF) as u32;
 
-        let vram_addr = 2 * (1024 * vram_row + vram_col);
+            let vram_addr = 2 * (1024 * vram_row + vram_col);
 
-        self.gpu_read = self.vram.read32(vram_addr);
+            let halfword = self.vram.read16(vram_addr) as u32;
+            self.gpu_read |= halfword << (i << 4);
 
-        fields.current_col += 1;
-        if fields.current_col == fields.width {
-            fields.current_col = 0;
-            fields.current_row += 1;
+            fields.current_col += 1;
+            if fields.current_col == fields.width {
+                fields.current_col = 0;
+                fields.current_row += 1;
 
-            if fields.current_row == fields.height {
-                self.gpu_read_transfer = None;
-                self.gpu_status.set_ready_to_send_VRAM_to_CPU(0);
-                return;
+                if fields.current_row == fields.height {
+                    self.gpu_read_transfer = None;
+                    self.gpu_status.set_ready_to_send_VRAM_to_CPU(0);
+                    return;
+                }
             }
         }
 

@@ -1,6 +1,6 @@
 use std::hint::unreachable_unchecked;
 
-use glam::U8Vec3;
+use glam::{U8Vec3, UVec2};
 
 use crate::gpu::{primitives::{color::Color, interpolate_uv_coords, vertex::Vertex}, GP0_State, ParametrizedCommand, GPU};
 
@@ -537,6 +537,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let tex_page_color_depth = (page >> 7) & 3;
 
         let clut_x = clut & 0x3F;
@@ -549,15 +550,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -572,8 +568,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let px_idx = [
                                 tex_color,
@@ -619,6 +615,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let tex_page_color_depth = (page >> 7) & 3;
 
         let clut_x = clut & 0x3F;
@@ -631,15 +628,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -654,8 +646,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let px_idx = [
                                 tex_color,
@@ -684,8 +676,8 @@ impl GPU {
                         let pixel: Vertex = (x, y).into();
                         if pixel.is_inside_triangle(v0, v1, v2) {
                             let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             if tex_color != 0 {
                                 self.draw_compressed_pixel(tex_color, pixel.into());
@@ -713,6 +705,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let semi_transparency = ((page >> 5) & 3) as u8;
         let tex_page_color_depth = (page >> 7) & 3;
 
@@ -726,15 +719,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -749,8 +737,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let px_idx = [
                                 tex_color,
@@ -796,6 +784,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let semi_transparency = ((page >> 5) & 3) as u8;
         let tex_page_color_depth = (page >> 7) & 3;
 
@@ -809,15 +798,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -832,8 +816,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let px_idx = [
                                 tex_color,
@@ -880,6 +864,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let tex_page_color_depth = (page >> 7) & 3;
 
         let clut_x = clut & 0x3F;
@@ -892,15 +877,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -915,8 +895,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]);
 
@@ -967,6 +947,7 @@ impl GPU {
     ) {
         let base_x = (page & 0xF) << 6;
         let base_y = ((page >> 4) & 1) << 8;
+        let base = UVec2::from((base_x, base_y));
         let semi_transparency = ((page >> 5) & 3) as u8;
         let tex_page_color_depth = (page >> 7) & 3;
 
@@ -980,15 +961,10 @@ impl GPU {
 
         let mut uv0 = uv0;
         let mut uv1 = uv1;
-        let mut uv2 = uv2;
 
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
         }
-
-        uv0 = (uv0.0 + base_x, uv0.1 + base_y);
-        uv1 = (uv1.0 + base_x, uv1.1 + base_y);
-        uv2 = (uv2.0 + base_x, uv2.1 + base_y);
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
 
@@ -1003,8 +979,8 @@ impl GPU {
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
 
                             let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let uv = interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]);
-                            let tex_color = self.vram.read16(((uv.1 << 10) + uv.0) << 1);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
 
                             let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]);
 
