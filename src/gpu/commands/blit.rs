@@ -1,6 +1,41 @@
 use crate::gpu::{GP0_State, BlitFields, GPU};
 
 impl GPU {
+    pub fn initialize_vram_vram_copy(&mut self) -> GP0_State {
+        let source_coords = self.gp0_parameters.pop_front().unwrap();
+        let dest_coords = self.gp0_parameters.pop_front().unwrap();
+        let size = self.gp0_parameters.pop_front().unwrap();
+
+        let source_x = source_coords & 0x3FF;
+        let source_y = (source_coords >> 16) & 0x1FF;
+
+        let dest_x = dest_coords & 0x3FF;
+        let dest_y = (dest_coords >> 16) & 0x1FF;
+
+        let mut width = size & 0x3FF;
+        if width == 0 {width = 1024}
+
+        let mut height = (size >> 16) & 0x1FF;
+        if height == 0 {height = 512}
+
+        for row_offset in 0..height {
+            for col_offset in 0..width {
+                let sx = source_x + col_offset;
+                let sy = source_y + row_offset;
+                let dx = dest_x + col_offset;
+                let dy = dest_y + row_offset;
+
+                let src_addr = ((sy << 10) + sx) << 1;
+                let dst_addr = ((dy << 10) + dx) << 1;
+
+                let value = self.vram.read32(src_addr);
+                self.vram.write32(dst_addr, value);
+            }
+        }
+
+        GP0_State::CommandStart
+    }
+
     pub fn initialize_cpu_vram_copy(&mut self) -> GP0_State {
         let coords = self.gp0_parameters.pop_front().unwrap();
         let size = self.gp0_parameters.pop_front().unwrap();

@@ -53,6 +53,8 @@ pub struct BlitFields {
 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ParametrizedCommand {
+    Fill(u32),
+    VRAM_VRAM_Copy,
     CPU_VRAM_Copy,
     VRAM_CPU_Copy,
     Polygon(u32),
@@ -173,10 +175,7 @@ impl GPU {
                     1 => self.set_polygon_state(word),
                     2 => self.set_line_state(word),
                     3 => self.set_rectangle_state(word),
-                    4 => {
-                        println!("VRAM-to-VRAM copy {word:08X}");
-                        GP0_State::CommandStart
-                    }
+                    4 => GP0_State::ReceivingParameters {idx: 1, expected: 3, command: ParametrizedCommand::VRAM_VRAM_Copy},
                     5 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::CPU_VRAM_Copy},
                     6 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::VRAM_CPU_Copy},
                     0 | 7 => match word >> 24 {
@@ -186,6 +185,7 @@ impl GPU {
                         // Weird NOP that takes up space in the FIFO, no FIFO in this emulator though
                         0x03 => GP0_State::CommandStart,
 
+                        0x02 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::Fill(word)},
                         0x1F => self.irq(),
                         0xE1 => self.set_texpage(word),
                         0xE2 => self.set_tex_window(word),
@@ -194,7 +194,7 @@ impl GPU {
                         0xE5 => self.set_drawing_offset(word),
                         0xE6 => self.set_mask_bit_setting(word),
                         _ => {
-                            // println!("{word:08X}");
+                            println!("{word:08X}");
                             GP0_State::CommandStart
                         }
                     }
@@ -207,6 +207,8 @@ impl GPU {
 
                 if idx == expected {
                     match command {
+                        ParametrizedCommand::Fill(word) => self.quick_fill(word),
+                        ParametrizedCommand::VRAM_VRAM_Copy => self.initialize_vram_vram_copy(),
                         ParametrizedCommand::CPU_VRAM_Copy => self.initialize_cpu_vram_copy(),
                         ParametrizedCommand::VRAM_CPU_Copy => self.initialize_vram_cpu_copy(),
                         ParametrizedCommand::Polygon(word) => {
