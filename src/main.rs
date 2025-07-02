@@ -17,11 +17,11 @@ mod cd_rom;
 const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
 
-// const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
+const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    let exe_binding = std::fs::read("VBLANK.exe").unwrap();
-    let exe = exe_binding.as_slice();
+    // let exe_binding = std::fs::read("RenderRectangle16BPP.exe").unwrap();
+    // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
@@ -47,7 +47,7 @@ fn main() -> Result<(), anyhow::Error> {
 
     let mut instruction = true;
 
-    // let mut frame_start = Instant::now();
+    let mut frame_start = Instant::now();
 
     loop {
         if instruction {
@@ -72,9 +72,9 @@ fn main() -> Result<(), anyhow::Error> {
                 }
             }
 
-            // let frame_time = frame_start.elapsed();
-            // std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
-            // frame_start = Instant::now();
+            let frame_time = frame_start.elapsed();
+            std::thread::sleep(NTSC_FRAME_TIME.saturating_sub(frame_time));
+            frame_start = Instant::now();
         }
         instruction = !instruction;
     }

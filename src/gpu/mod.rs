@@ -240,7 +240,14 @@ impl GPU {
                         }
                         ParametrizedCommand::Rectangle(word) => {
                             match (word >> 24) as u8 {
+                                0x60 => self.draw_variable_monochrome_rect(word),
+                                0x62 => self.draw_transparent_variable_monochrome_rect(word),
                                 0x68 => self.draw_single_pixel_monochrome_rect(word),
+                                0x6A => self.draw_transparent_single_pixel_monochrome_rect(word),
+                                0x70 => self.draw_8x8_monochrome_rect(word),
+                                0x72 => self.draw_transparent_8x8_monochrome_rect(word),
+                                0x78 => self.draw_16x16_monochrome_rect(word),
+                                0x7A => self.draw_transparent_16x16_monochrome_rect(word),
                                 _ => {
                                     println!("Rectangle command not implemented: {word:08X}");
                                     GP0_State::CommandStart
