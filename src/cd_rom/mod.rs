@@ -138,7 +138,6 @@ impl CD_ROM {
     }
 
     fn send_status(&mut self) {
-        self.status.insert(CD_ROM_STATUS::SHELL);
         self.result_fifo[self.result_idx] = self.status.bits();
         self.result_size = 0;
         self.result_fifo_empty = false;
@@ -156,6 +155,7 @@ impl CD_ROM {
         self.result_idx = 0;
         self.result_size = 8;
         *self.result_fifo[self.result_idx..].first_chunk_mut().unwrap() = NO_DISK;
+        self.status.insert(CD_ROM_STATUS::SHELL);
         self.schedule_int(5);
         self.irq_delay = ID_SECOND_DELAY;
     }
