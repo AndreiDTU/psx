@@ -20,7 +20,7 @@ const VRAM_HEIGHT: u32 = 512;
 const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("MemoryTransfer16BPP.exe").unwrap();
+    // let exe_binding = std::fs::read("RenderTextureRectangleCLUT4BPP.exe").unwrap();
     // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();

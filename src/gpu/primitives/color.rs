@@ -28,6 +28,13 @@ impl From<u16> for Color {
     }
 }
 
+impl From<u32> for Color {
+    fn from(value: u32) -> Self {
+        let rgb_word = value.to_le_bytes();
+        Color { rgb: U8Vec3 { x: rgb_word[2], y: rgb_word[1], z: rgb_word[0] } }
+    }
+}
+
 impl From<Color> for u32 {
     #[inline(always)]
     fn from(color: Color) -> Self {
@@ -37,6 +44,11 @@ impl From<Color> for u32 {
 }
 
 impl Color {
+    #[inline(always)]
+    pub fn modulate(&self, vertex_color: Color) -> Color {
+        Color {rgb: ((self.rgb.as_dvec3() * vertex_color.rgb.as_dvec3()) / DVec3::splat(128.0)).round().as_u8vec3()}
+    }
+
     #[inline]
     pub fn apply_dithering(&mut self, p: Vertex) -> Self {
         let [px, py] = (p.coords & 3).to_array();

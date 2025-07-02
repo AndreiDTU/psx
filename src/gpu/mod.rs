@@ -185,6 +185,7 @@ impl GPU {
                         // Weird NOP that takes up space in the FIFO, no FIFO in this emulator though
                         0x03 => GP0_State::CommandStart,
 
+                        0x01 => {/* TODO: Flush texture cache */ GP0_State::CommandStart}
                         0x02 => GP0_State::ReceivingParameters {idx: 1, expected: 2, command: ParametrizedCommand::Fill(word)},
                         0x1F => self.irq(),
                         0xE1 => self.set_texpage(word),
@@ -215,13 +216,24 @@ impl GPU {
                             match (word >> 24) as u8 {
                                 0x20 => self.draw_monochrome_tri(word),
                                 0x22 => self.draw_transparent_monochrome_tri(word),
+                                0x24 => self.draw_modulated_tri(word),
+                                0x25 => self.draw_textured_tri(),
+                                0x26 => self.draw_transparent_modulated_tri(word),
+                                0x27 => self.draw_transparent_textured_tri(),
                                 0x2A => self.draw_transparent_monochrome_quad(word),
                                 0x28 => self.draw_monochrome_quad(word),
                                 0x2C => self.draw_modulated_quad(word),
+                                0x2D => self.draw_textured_quad(),
+                                0x2E => self.draw_transparent_modulated_quad(word),
+                                0x2F => self.draw_transparent_textured_quad(),
                                 0x30 => self.draw_gouraud_tri(word),
                                 0x32 => self.draw_transparent_gouraud_tri(word),
+                                0x34 => self.draw_gouraud_modulated_tri(word),
+                                0x36 => self.draw_transparent_gouraud_modulated_tri(word),
                                 0x38 => self.draw_gouraud_quad(word),
                                 0x3A => self.draw_transparent_gouraud_quad(word),
+                                0x3C => self.draw_gouraud_modulated_quad(word),
+                                0x3E => self.draw_transparent_gouraud_modulated_quad(word),
                                 _ => {
                                     println!("Polygon command not implemented: {word:08X}");
                                     GP0_State::CommandStart
@@ -244,6 +256,7 @@ impl GPU {
                             match (word >> 24) as u8 {
                                 0x60 => self.draw_variable_monochrome_rect(word),
                                 0x62 => self.draw_transparent_variable_monochrome_rect(word),
+                                0x65 => self.draw_variable_textured_rect(),
                                 0x68 => self.draw_single_pixel_monochrome_rect(word),
                                 0x6A => self.draw_transparent_single_pixel_monochrome_rect(word),
                                 0x70 => self.draw_8x8_monochrome_rect(word),
@@ -306,7 +319,7 @@ impl GPU {
         self.vram.write16(vram_addr, color_halfword);
     }
 
-    fn draw_transparent_pixel(&mut self, color: u32, coords: u32) {
+    fn draw_transparent_pixel(&mut self, color: u32, coords: u32, semi_transparency: u8) {
         let color_halfword = Color::compress_color_depth(color);
         
         let x = coords & 0x3FF;
@@ -317,7 +330,7 @@ impl GPU {
         let back: Color = self.vram.read16(vram_addr).into();
         let front: Color = color_halfword.into();
 
-        let blended = Color::compress_color_depth(front.blend(back, self.gpu_status.semi_transparency()).into());
+        let blended = Color::compress_color_depth(front.blend(back, semi_transparency).into());
         
         self.vram.write16(vram_addr, blended);
     }
@@ -329,6 +342,20 @@ impl GPU {
         let vram_addr = ((y << 10) + x) << 1;
         
         self.vram.write16(vram_addr, color);
+    }
+
+    fn draw_compressed_transparent_pixel(&mut self, color: u16, coords: u32, semi_transparency: u8) {
+        let x = coords & 0x3FF;
+        let y = (coords >> 16) & 0x1FF;
+
+        let vram_addr = ((y << 10) + x) << 1;
+
+        let back: Color = self.vram.read16(vram_addr).into();
+        let front: Color = color.into();
+
+        let blended = Color::compress_color_depth(front.blend(back, semi_transparency).into());
+        
+        self.vram.write16(vram_addr, blended);
     }
 
     pub fn render_vram(&self) -> Box<[Color; 512 * 1024]> {

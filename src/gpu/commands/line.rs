@@ -136,7 +136,7 @@ impl GPU {
         for pixel in v0.bresenham_line(v1) {
             let coords = pixel.translate(self.drawing_offset).into();
 
-            self.draw_transparent_pixel(color, coords);
+            self.draw_transparent_pixel(color, coords, self.gpu_status.semi_transparency());
         }
     }
 
@@ -154,7 +154,7 @@ impl GPU {
             let coords = pixel.translate(self.drawing_offset).into();
             color.apply_dithering(pixel);
             
-            self.draw_transparent_pixel(color.into(), coords);
+            self.draw_transparent_pixel(color.into(), coords, self.gpu_status.semi_transparency());
         }
     }
 }
