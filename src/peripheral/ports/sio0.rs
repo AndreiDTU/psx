@@ -52,16 +52,16 @@ impl SIO0 {
                 if self.bits_sent == 8 {
                     if let Some(device) = &mut self.devices[self.SIO_CTRL.sio0_port_select() as usize] {
                         device.borrow_mut().send(self.TX_DATA as u8);
-                        self.irq_pending = true;
-                        self.irq_delay = ACK_IRQ_DELAY;
                     }
+                    self.irq_pending = true;
+                    self.irq_delay = ACK_IRQ_DELAY;
                     self.TX_DATA = 0;
                     self.SIO_STAT.set_tx_fifo_not_full(1);
                     self.SIO_STAT.set_tx_idle(1);
-                    println!("TX FIFO empty");
+                    // println!("TX FIFO empty");
                     self.bits_sent = 0;
                 }
-                println!("SIO0 bits_sent {}", self.bits_sent);
+                // println!("SIO0 bits_sent {}", self.bits_sent);
             }
 
             self.reload_timer();
@@ -70,6 +70,7 @@ impl SIO0 {
         if self.irq_pending {
             self.irq_delay -= 1;
             if self.irq_delay == 0 {
+                // println!("byte received");
                 self.irq_pending = false;
                 self.interrupt.borrow_mut().request(IRQ::BYTE_RECEIVED);
                 self.SIO_STAT.set_irq(1);
@@ -113,6 +114,7 @@ impl SIO0 {
                 self.SIO_MODE = SIO_MODE::from_bytes((value as u16 & 0x013F).to_le_bytes());
                 self.SIO_CTRL = SIO_CTRL::from_bytes(((value >> 16) as u16 & 0x3F7F).to_le_bytes());
                 if self.SIO_CTRL.acknowledge() != 0 {
+                    // println!("Clearing IRQ");
                     self.SIO_STAT.set_irq(0);
                 }
             }
@@ -125,7 +127,7 @@ impl SIO0 {
     }
 
     pub fn read16(&mut self, offset: u32) -> u16 {
-        println!("SI0 read 16-bit offset: {offset:02X}, SIO0_STAT: {:08X}", u32::from_le_bytes(self.SIO_STAT.into_bytes()));
+        // println!("SI0 read 16-bit offset: {offset:02X}, SIO0_STAT: {:08X}", u32::from_le_bytes(self.SIO_STAT.into_bytes()));
         let offset = offset & 0xF;
         match offset {
             0x00 => {
@@ -137,8 +139,8 @@ impl SIO0 {
                 data
             }
             0x02 => (self.RX_DATA >> 16) as u16,
-            // 0x04 => u32::from_le_bytes(self.SIO_STAT.into_bytes()) as u16,
-            0x04 => 0xFF,
+            0x04 => u32::from_le_bytes(self.SIO_STAT.into_bytes()) as u16,
+            // 0x04 => 0xFF,
             0x06 => (u32::from_le_bytes(self.SIO_STAT.into_bytes()) >> 16) as u16,
             0x08 => u16::from_le_bytes(self.SIO_MODE.into_bytes()),
             0x0A => u16::from_le_bytes(self.SIO_CTRL.into_bytes()),

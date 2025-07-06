@@ -39,8 +39,10 @@ fn main() -> Result<(), anyhow::Error> {
     let system_control = Rc::new(RefCell::new(SystemControl::new()));
     let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
     let sio0 = Rc::new(RefCell::new(SIO0::new([const { None }; 2], interrupt.clone())));
-    let pad = Rc::new(RefCell::new(Box::new(DigitalPad::new(Rc::downgrade(&sio0))) as Box<dyn Device>));
-    sio0.borrow_mut().connect_device(pad.clone(), 0);
+    let pad1 = Rc::new(RefCell::new(Box::new(DigitalPad::new(Rc::downgrade(&sio0))) as Box<dyn Device>));
+    let pad2 = Rc::new(RefCell::new(Box::new(DigitalPad::new(Rc::downgrade(&sio0))) as Box<dyn Device>));
+    sio0.borrow_mut().connect_device(pad1.clone(), 0);
+    sio0.borrow_mut().connect_device(pad2.clone(), 1);
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
     let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone())));
     let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone(), sio0.clone())?));
@@ -62,7 +64,8 @@ fn main() -> Result<(), anyhow::Error> {
         dma.borrow_mut().tick();
         cd_rom.borrow_mut().tick();
         sio0.borrow_mut().tick();
-        pad.borrow_mut().transfer_rx();
+        pad1.borrow_mut().transfer_rx();
+        pad2.borrow_mut().transfer_rx();
         if interface.borrow_mut().gpu.tick() {
             let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
             texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;
