@@ -1,11 +1,12 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
+use std::collections::HashMap;
 #[allow(unused_imports)]
 use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Duration, Instant}};
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}, peripheral::{devices::{digital_pad::DigitalPad, Device}, ports::sio0::SIO0}};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}, peripheral::{devices::{digital_pad::DigitalPad, Device, DigitalSwitch}, ports::sio0::SIO0}};
 
 mod bus;
 mod bios;
@@ -55,6 +56,22 @@ fn main() -> Result<(), anyhow::Error> {
 
     let mut frame_start = Instant::now();
 
+    let mut key_map = HashMap::new();
+    key_map.insert(Keycode::W, DigitalSwitch::TRIANGLE);
+    key_map.insert(Keycode::A, DigitalSwitch::SQUARE);
+    key_map.insert(Keycode::S, DigitalSwitch::CROSS);
+    key_map.insert(Keycode::D, DigitalSwitch::CIRCLE);
+    key_map.insert(Keycode::Q, DigitalSwitch::L1);
+    key_map.insert(Keycode::E, DigitalSwitch::R1);
+    key_map.insert(Keycode::NUM_1, DigitalSwitch::L2);
+    key_map.insert(Keycode::NUM_3, DigitalSwitch::R2);
+    key_map.insert(Keycode::UP, DigitalSwitch::UP);
+    key_map.insert(Keycode::LEFT, DigitalSwitch::LEFT);
+    key_map.insert(Keycode::DOWN, DigitalSwitch::DOWN);
+    key_map.insert(Keycode::RIGHT, DigitalSwitch::RIGHT);
+    key_map.insert(Keycode::RETURN, DigitalSwitch::START);
+    key_map.insert(Keycode::BACKSPACE, DigitalSwitch::SELECT);
+
     loop {
         if instruction {
             // sideload_exe(&mut cpu, interface.clone(), exe);
@@ -77,6 +94,20 @@ fn main() -> Result<(), anyhow::Error> {
             for event in event_pump.poll_iter() {
                 match event {
                     Event::Quit { .. } | Event::KeyDown {keycode: Some(Keycode::Escape), ..} => return Ok(()),
+                    Event::KeyDown { keycode, .. } => {
+                        if let Some(key) = keycode {
+                            if let Some(switch) = key_map.get(&key) {
+                                pad1.borrow_mut().set_switch(*switch, false);
+                            }
+                        }
+                    }
+                    Event::KeyUp { keycode, .. } => {
+                        if let Some(key) = keycode {
+                            if let Some(switch) = key_map.get(&key) {
+                                pad1.borrow_mut().set_switch(*switch, true);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }

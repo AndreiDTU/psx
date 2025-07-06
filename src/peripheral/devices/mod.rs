@@ -3,6 +3,7 @@ use bitflags::bitflags;
 pub mod digital_pad;
 
 bitflags! {
+    #[derive(Clone, Copy)]
     pub struct DigitalSwitch: u16 {
         const SELECT   = 0x0001;
         const L3       = 0x0002;
