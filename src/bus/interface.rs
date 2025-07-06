@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::{Rc, Weak}};
 
-use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, gpu::GPU, ram::RAM};
+use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, gpu::GPU, peripheral::ports::sio0::SIO0, ram::RAM};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -16,8 +16,11 @@ const SCRATCHPAD_END: u32 = SCRATCHPAD_START + SCRATCHPAD_SIZE as u32;
 const MEM_CTRL_START: u32 = 0x1F80_1000;
 const MEM_CTRL_END: u32 = MEM_CTRL_START + 0x24;
 
-const PERIPHERAL_START: u32 = 0x1F801040;
-const PERIPHERAL_END: u32 = PERIPHERAL_START + 0x20;
+const SIO0_START: u32 = 0x1F801040;
+const SIO0_END: u32 = SIO0_START + 0x10;
+
+const SIO1_START: u32 = 0x1F801050;
+const SIO1_END: u32 = SIO1_START + 0x10;
 
 const MEM_CTRL_2_START: u32 = 0x1F80_1060;
 const MEM_CTRL_2_END: u32 = MEM_CTRL_2_START + 4;
@@ -64,16 +67,17 @@ pub struct Interface {
     pub interrupt: Rc<RefCell<Interrupt>>,
     cd_rom: Rc<RefCell<CD_ROM>>,
     timer: Rc<RefCell<Timer>>,
+    sio0: Rc<RefCell<SIO0>>,
 }
 
 impl Interface {
-    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>, timer: Rc<RefCell<Timer>>) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>, timer: Rc<RefCell<Timer>>, sio0: Rc<RefCell<SIO0>>) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
         let gpu = GPU::new(interrupt.clone(), timer.clone());
 
-        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer, cd_rom })
+        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer, cd_rom, sio0 })
     }
 
     pub fn read32(&mut self, addr: u32) -> u32 {
@@ -85,7 +89,8 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0xFF,
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().read32(addr - SIO0_START),
+            SIO1_START..SIO1_END => 0xFF,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read32(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -122,7 +127,8 @@ impl Interface {
             DRAM_START..DRAM_END => self.dram.read16((addr - DRAM_START) & 0x1FFFFF),
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read16(addr - SCRATCHPAD_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0xFF,
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().read16(addr - SIO0_START),
+            SIO1_START..SIO1_END => 0xFF,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             TIMER_START..TIMER_END => self.timer.borrow_mut().read16(addr - TIMER_START),
             CD_ROM_START..CD_ROM_END => 0,
@@ -150,7 +156,8 @@ impl Interface {
             EXPANSION_1_START..EXPANSION_1_END => 0xFF,
             BIOS_START..BIOS_END => self.bios.read8(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
-            PERIPHERAL_START..PERIPHERAL_END => 0xFF,
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().read8(addr - SIO0_START),
+            SIO1_START..SIO1_END => 0xFF,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => 0,
@@ -170,7 +177,8 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write32(addr - SCRATCHPAD_START, value),
             BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
-            PERIPHERAL_START..PERIPHERAL_END => {},
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().write32(addr - SIO0_START, value),
+            SIO1_START..SIO1_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write32(addr - TIMER_START, value),
             CD_ROM_START..CD_ROM_END => {},
@@ -210,7 +218,8 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write16(addr - SCRATCHPAD_START, value),
             BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
-            PERIPHERAL_START..PERIPHERAL_END => {},
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().write16(addr - SIO0_START, value),
+            SIO1_START..SIO1_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             TIMER_START..TIMER_END => self.timer.borrow_mut().write16(addr - TIMER_START, value),
             CD_ROM_START..CD_ROM_END => {},
@@ -236,7 +245,8 @@ impl Interface {
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.write8(addr - SCRATCHPAD_START, value),
             BIOS_START..BIOS_END => {},
             MEM_CTRL_START..MEM_CTRL_END => {},
-            PERIPHERAL_START..PERIPHERAL_END => {},
+            SIO0_START..SIO0_END => self.sio0.borrow_mut().write8(addr - SIO0_START, value),
+            SIO1_START..SIO1_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().write8(addr - CD_ROM_START, value),
             VOICE_START..VOICE_END => {},

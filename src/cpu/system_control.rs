@@ -1,4 +1,4 @@
-use crate::{cpu::decoder::Cause, Registers};
+use crate::Registers;
 
 #[derive(Debug)]
 pub struct SystemControl {

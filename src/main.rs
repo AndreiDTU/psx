@@ -5,7 +5,7 @@ use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Dura
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}, peripheral::{devices::{digital_pad::DigitalPad, Device}, ports::sio0::SIO0}};
 
 mod bus;
 mod bios;
@@ -13,6 +13,7 @@ mod cpu;
 mod gpu;
 mod ram;
 mod cd_rom;
+mod peripheral;
 
 const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
@@ -37,9 +38,12 @@ fn main() -> Result<(), anyhow::Error> {
 
     let system_control = Rc::new(RefCell::new(SystemControl::new()));
     let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
+    let sio0 = Rc::new(RefCell::new(SIO0::new([const { None }; 2], interrupt.clone())));
+    let pad = Rc::new(RefCell::new(Box::new(DigitalPad::new(Rc::downgrade(&sio0))) as Box<dyn Device>));
+    sio0.borrow_mut().connect_device(pad.clone(), 0);
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
     let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone())));
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone())?));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone(), sio0.clone())?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);
@@ -57,6 +61,8 @@ fn main() -> Result<(), anyhow::Error> {
         timer.borrow_mut().tick();
         dma.borrow_mut().tick();
         cd_rom.borrow_mut().tick();
+        sio0.borrow_mut().tick();
+        pad.borrow_mut().transfer_rx();
         if interface.borrow_mut().gpu.tick() {
             let frame: Vec<_> = interface.borrow().gpu.render_vram().iter().flat_map(|color| color.rgb.to_array()).collect();
             texture.update(None, &frame[..], VRAM_WIDTH as usize * 3)?;

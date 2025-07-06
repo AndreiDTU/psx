@@ -31,7 +31,7 @@ pub struct CD_ROM {
     result_idx: usize,
     result_size: usize,
     result_fifo_empty: bool,
-    second_response: SECOND_RESPONSE,
+    second_response: SecondResponse,
 
     irq_delay: usize,
     irq: bool,
@@ -51,7 +51,7 @@ impl CD_ROM {
             result_idx: 0,
             result_size: 0,
             result_fifo_empty: false,
-            second_response: SECOND_RESPONSE::None,
+            second_response: SecondResponse::None,
 
             irq_delay: AVERAGE_IRQ_DELAY,
             irq: false,
@@ -68,10 +68,10 @@ impl CD_ROM {
                 self.irq_delay = AVERAGE_IRQ_DELAY;
                 self.irq = false;
                 match self.second_response {
-                    SECOND_RESPONSE::GetID => self.get_id_second_response(),
+                    SecondResponse::GetID => self.get_id_second_response(),
                     _ => {}
                 }
-                self.second_response = SECOND_RESPONSE::None;
+                self.second_response = SecondResponse::None;
             }
         }
     }
@@ -148,7 +148,7 @@ impl CD_ROM {
     fn get_id(&mut self) {
         self.status.insert(CD_ROM_STATUS::SHELL);
         self.send_status();
-        self.second_response = SECOND_RESPONSE::GetID;
+        self.second_response = SecondResponse::GetID;
     }
 
     fn get_id_second_response(&mut self) {
@@ -221,7 +221,7 @@ const ADPCTL:    usize = 15;
 const VERSION: [u8; 4] = [0x94, 0x09, 0x19, 0xC0];
 const NO_DISK: [u8; 8] = [0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 
-enum SECOND_RESPONSE {
+enum SecondResponse {
     None,
     GetID,
 }
