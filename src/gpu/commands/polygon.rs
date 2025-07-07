@@ -841,7 +841,20 @@ impl GPU {
                     }
                 }
                 1 => todo!(),
-                2 => todo!(),
+                2 => {
+                    for x in min_x..max_x {
+                        let pixel: Vertex = (x, y).into();
+                        if pixel.is_inside_triangle(v0, v1, v2) {
+                            let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
+
+                            if tex_color != 0 {
+                                self.draw_compressed_transparent_pixel(tex_color, pixel.into(), semi_transparency);
+                            }
+                        }
+                    }
+                },
                 3 => panic!("Reserved color depth"),
                 _ => unsafe { unreachable_unchecked() }
             };
