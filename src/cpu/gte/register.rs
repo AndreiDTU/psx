@@ -2,6 +2,9 @@ use glam::{I16Vec2, I16Vec3, I64Vec3, IVec3, U8Vec4, UVec3, Vec3Swizzles};
 
 use crate::cpu::gte::GTE;
 
+pub const I44_MAX: I64Vec3 = I64Vec3::splat(0x0000_07FF_FFFF_FFFF);
+pub const I44_MIN: I64Vec3 = I64Vec3::splat(-0x0000_0800_0000_0000);
+
 impl GTE {
     pub fn vector(&self, idx: u32) -> I16Vec3 {
         let register_idx = idx << 1;
@@ -24,7 +27,7 @@ impl GTE {
         self.R[7] = value as u32;
     }
 
-    pub fn update_otz_flags(&mut self, value: i32) -> u16 {
+    pub fn update_otz_flags(&mut self, value: i64) -> u16 {
         if value > 0xFFFF {
             self.R[63] |= 1 << 18;
             0xFFFF
@@ -57,35 +60,17 @@ impl GTE {
 
     pub fn update_ir_flags(&mut self, vector: IVec3, lm: bool) -> I16Vec3 {
         if !lm {
-            let neg_overflow = vector.zyx().cmplt(IVec3::splat(i16::MIN as i32));
-            let pos_overflow = vector.zyx().cmpgt(IVec3::splat(i16::MAX as i32));
-
-            let mut truncated = vector.as_i16vec3();
-            if !neg_overflow.any() && !pos_overflow.any() {return truncated}
+            let neg_overflow = vector.zyx().cmplt(I16Vec3::MIN.as_ivec3());
+            let pos_overflow = vector.zyx().cmpgt(I16Vec3::MAX.as_ivec3());
 
             self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 22;
-            truncated = I16Vec3 {
-                x: if pos_overflow.z {i16::MAX} else if neg_overflow.z {i16::MIN} else {truncated.x},
-                y: if pos_overflow.y {i16::MAX} else if neg_overflow.y {i16::MIN} else {truncated.y},
-                z: if pos_overflow.x {i16::MAX} else if neg_overflow.x {i16::MIN} else {truncated.z},
-            };
-
-            truncated
+            vector.clamp(I16Vec3::MIN.as_ivec3(), I16Vec3::MAX.as_ivec3()).as_i16vec3()
         } else {
-            let neg_overflow = vector.zyx().cmplt(IVec3::splat(0));
-            let pos_overflow = vector.zyx().cmpgt(IVec3::splat(i16::MAX as i32));
-
-            let mut truncated = vector.as_i16vec3();
-            if !neg_overflow.any() && !pos_overflow.any() {return truncated}
+            let neg_overflow = vector.zyx().cmplt(IVec3::ZERO);
+            let pos_overflow = vector.zyx().cmpgt(I16Vec3::MAX.as_ivec3());
 
             self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 22;
-            truncated = I16Vec3 {
-                x: if pos_overflow.z {i16::MAX} else if neg_overflow.z {0} else {truncated.x},
-                y: if pos_overflow.y {i16::MAX} else if neg_overflow.y {0} else {truncated.y},
-                z: if pos_overflow.x {i16::MAX} else if neg_overflow.x {0} else {truncated.z},
-            };
-
-            truncated
+            vector.clamp(IVec3::ZERO, I16Vec3::MAX.as_ivec3()).as_i16vec3()
         }
     }
 
@@ -107,6 +92,24 @@ impl GTE {
 
     pub fn rgb(&self, idx: u32) -> U8Vec4 {
         U8Vec4::from_array(self.R[idx | 20].to_le_bytes())
+    }
+
+    pub fn write_color_fifo(&mut self) {
+        const COLOR_MIN: IVec3 = IVec3::ZERO;
+        const COLOR_MAX: IVec3 = IVec3::splat(0xFF);
+
+        self.R[20] = self.R[21];
+        self.R[21] = self.R[22];
+
+        let code = (self.R[6] >> 24) as u8;
+        let raw_rgb: IVec3 = self.mac_vector() >> 4;
+
+        let neg_overflow = raw_rgb.zyx().cmplt(COLOR_MIN);
+        let pos_overflow = raw_rgb.zyx().cmpgt(COLOR_MAX);
+        self.R[63] |= (neg_overflow.bitmask() | pos_overflow.bitmask()) << 19;
+
+        let rgb = raw_rgb.clamp(COLOR_MIN, COLOR_MAX).as_u8vec3().extend(code).to_array();
+        self.R[22] = u32::from_le_bytes(rgb);
     }
 
     pub fn mac0(&self) -> i32 {
@@ -135,56 +138,24 @@ impl GTE {
         [self.R[25], self.R[26], self.R[27]] = vector.as_uvec3().to_array();
     }
 
-    pub fn update_mac_vector_flags(&mut self, new_mac: I64Vec3, sf: bool) -> IVec3 {
+    pub fn update_mac_vector_flags(&mut self, raw_mac: I64Vec3, sf: bool) -> IVec3 {
         if sf {
-            let new_mac: I64Vec3 = new_mac >> 12;
-            let neg_overflow = new_mac.zyx().cmplt(I64Vec3::splat(i32::MIN as i64));
-            let pos_overflow = new_mac.zyx().cmpgt(I64Vec3::splat(i32::MAX as i64));
-
-            let mut truncated = new_mac.as_ivec3();
-
-            if !neg_overflow.any() && !pos_overflow.any() {return truncated}
+            let new_mac: I64Vec3 = raw_mac >> 12;
+            let neg_overflow = new_mac.zyx().cmplt(IVec3::MIN.as_i64vec3());
+            let pos_overflow = new_mac.zyx().cmpgt(IVec3::MAX.as_i64vec3());
 
             self.R[63] |= pos_overflow.bitmask() << 28;
-            truncated = IVec3 {
-                x: if pos_overflow.z {i32::MAX} else {truncated.x},
-                y: if pos_overflow.y {i32::MAX} else {truncated.y},
-                z: if pos_overflow.x {i32::MAX} else {truncated.z},
-            };
-
             self.R[63] |= neg_overflow.bitmask() << 25;
-            truncated = IVec3 {
-                x: if neg_overflow.z {i32::MIN} else {truncated.x},
-                y: if neg_overflow.y {i32::MIN} else {truncated.y},
-                z: if neg_overflow.x {i32::MIN} else {truncated.z},
-            };
 
-            truncated
-        } else {
-            const I44_MAX: i64 = 0x0000_07FF_FFFF_FFFF as i64;
-            const I44_MIN: i64 = -0x0000_0800_0000_0000 as i64;
-            let neg_overflow = new_mac.zyx().cmplt(I64Vec3::splat(I44_MIN));
-            let pos_overflow = new_mac.zyx().cmpgt(I64Vec3::splat(I44_MAX));
-
-            let mut truncated = new_mac.as_ivec3();
-
-            if !neg_overflow.any() && !pos_overflow.any() {return truncated}
+            new_mac.as_ivec3()
+        } else {            
+            let neg_overflow = raw_mac.zyx().cmplt(I44_MIN);
+            let pos_overflow = raw_mac.zyx().cmpgt(I44_MAX);
 
             self.R[63] |= pos_overflow.bitmask() << 28;
-            truncated = IVec3 {
-                x: if pos_overflow.z {I44_MAX as i32} else {truncated.x},
-                y: if pos_overflow.y {I44_MAX as i32} else {truncated.y},
-                z: if pos_overflow.x {I44_MAX as i32} else {truncated.z},
-            };
-
             self.R[63] |= neg_overflow.bitmask() << 25;
-            truncated = IVec3 {
-                x: if neg_overflow.z {I44_MIN as i32} else {truncated.x},
-                y: if neg_overflow.y {I44_MIN as i32} else {truncated.y},
-                z: if neg_overflow.x {I44_MIN as i32} else {truncated.z},
-            };
 
-            truncated
+            raw_mac.clamp(I44_MIN, I44_MAX).as_ivec3()
         }
     }
 
@@ -200,9 +171,13 @@ impl GTE {
     pub fn rt(&self) -> [I16Vec3; 3] {
         let row1 = I16Vec3 { x: self.R[32] as i16,         y: (self.R[32] >> 16) as i16, z: self.R[33] as i16        };
         let row2 = I16Vec3 { x: (self.R[33] >> 16) as i16, y: self.R[34] as i16,         z: (self.R[34] >> 16) as i16};
-        let row3 = I16Vec3 { x: self.R[35] as i16,         y: (self.R[34] >> 16) as i16, z: self.R[35] as i16        };
+        let row3 = I16Vec3 { x: self.R[35] as i16,         y: (self.R[35] >> 16) as i16, z: self.R[36] as i16        };
 
         [row1, row2, row3]
+    }
+
+    pub fn d_vector(&self) -> I16Vec3 {
+        I16Vec3 { x: self.R[32] as i16, y: self.R[34] as i16, z: self.R[36] as i16 }
     }
 
     pub fn tr(&self) -> IVec3 {

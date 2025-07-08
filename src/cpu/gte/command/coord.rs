@@ -1,30 +1,8 @@
 use glam::IVec3;
 
-use crate::cpu::gte::{command::GTE_Command, GTE};
+use crate::cpu::gte::GTE;
 
 impl GTE {
-    pub fn rtps(&mut self, command: u32) -> usize {
-        let sf = command.sf();
-        let tr = self.tr() * 0x1000;
-        let rt = self.rt();
-        let vector = self.vector(0).as_ivec3();
-
-        let rotated_vector = IVec3 {
-            x: (rt[0].as_ivec3() * vector).element_sum(),
-            y: (rt[1].as_ivec3() * vector).element_sum(),
-            z: (rt[2].as_ivec3() * vector).element_sum(),
-        };
-
-        let transformed_vector = (tr + rotated_vector) >> (sf * 12);
-        self.write_mac_vector(transformed_vector);
-        self.write_ir_vector(transformed_vector.as_i16vec3());
-
-        let screen_z = self.mac_vector().z >> ((1-sf)*12);
-        self.write_screen_z(3, screen_z as u16);
-
-        15
-    }
-
     pub fn nclip(&mut self, _command: u32) -> usize {
         let (s0, s1, s2) = (self.screen_xy(0).as_ivec2(), self.screen_xy(1).as_ivec2(), self.screen_xy(2).as_ivec2());
 
@@ -49,10 +27,29 @@ impl GTE {
 
         let zsf3 = self.zsf3() as i32;
 
-        let saturated_mac0 = self.update_mac0_flags(zsf3 as i64 * (sz1 + sz2 + sz3) as i32 as i64);
+        let raw_mac0 = zsf3 as i64 * (sz1 + sz2 + sz3) as i32 as i64;
+        let saturated_mac0 = self.update_mac0_flags(raw_mac0);
         self.write_mac0(saturated_mac0);
 
-        let saturated_otz = self.update_otz_flags(self.mac0() / 0x1000);
+        let saturated_otz = self.update_otz_flags(raw_mac0 >> 12);
+        self.write_otz(saturated_otz);
+
+        5
+    }
+
+    pub fn avsz4(&mut self, _command: u32) -> usize {
+        let sz0 = self.screen_z(0) as u32;
+        let sz1 = self.screen_z(1) as u32;
+        let sz2 = self.screen_z(2) as u32;
+        let sz3 = self.screen_z(3) as u32;
+
+        let zsf4 = self.zsf4() as i32;
+
+        let raw_mac0 = zsf4 as i64 * (sz0 + sz1 + sz2 + sz3) as i32 as i64;
+        let saturated_mac0 = self.update_mac0_flags(raw_mac0);
+        self.write_mac0(saturated_mac0);
+
+        let saturated_otz = self.update_otz_flags(raw_mac0 >> 12);
         self.write_otz(saturated_otz);
 
         5

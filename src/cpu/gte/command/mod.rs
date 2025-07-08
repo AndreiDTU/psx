@@ -1,19 +1,20 @@
 pub mod coord;
 pub mod general;
+pub mod color;
 
 pub trait GTE_Command {
-    fn sf(&self) -> i16;
+    fn sf(&self) -> bool;
     fn mul_matrix(&self) -> Self;
     fn mul_vector(&self) -> Self;
     fn trans_vector(&self) -> Self;
-    fn saturate(&self) -> Self;
+    fn lm(&self) -> bool;
     fn num(&self) -> Self;
 }
 
 impl GTE_Command for u32 {
     #[inline(always)]
-    fn sf(&self) -> i16 {
-        ((*self >> 19) & 1) as i16
+    fn sf(&self) -> bool {
+        (*self >> 19) & 1 != 0
     }
 
     #[inline(always)]
@@ -32,8 +33,8 @@ impl GTE_Command for u32 {
     }
 
     #[inline(always)]
-    fn saturate(&self) -> Self {
-        (*self >> 10) & 1
+    fn lm(&self) -> bool {
+        (*self >> 10) & 1 != 0
     }
 
     #[inline(always)]
