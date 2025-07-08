@@ -141,6 +141,30 @@ fn sideload_exe(cpu: &mut CPU, interface: Rc<RefCell<Interface>>, exe: &[u8]) {
     }
 
     cpu.next_pc = initial_pc;
+
+    amidog_args(interface);
+}
+
+#[allow(unused)]
+fn amidog_args(interface: Rc<RefCell<Interface>>) {
+    let args = ["console\0"];
+    let arglen = 1;
+    let mut len = 0;
+
+    for i in 0..arglen {
+        interface.borrow_mut().write32(0x1F80_0004 + (i * 4), 0x1F80_0044 + len);
+
+        let mut x = 0;
+        let n = args[i as usize].len() as u32;
+        for j in len..(len + n) {
+            interface.borrow_mut().write8(0x1F80_0044 + j, args[i as usize].as_bytes()[(j - len) as usize]);
+            x = j;
+        }
+
+        len = x;
+    }
+
+    interface.borrow_mut().write32(0x1F80_0000, arglen);
 }
 
 #[derive(Debug, Clone, Copy)]

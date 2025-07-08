@@ -1,9 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
-use crate::{bus::interface::Interface, cpu::{decoder::{Cause, Instruction}, system_control::SystemControl}, Registers};
+use crate::{bus::interface::Interface, cpu::{decoder::{Cause, Instruction}, gte::GTE, system_control::SystemControl}, Registers};
 
 pub mod decoder;
 pub mod system_control;
+mod gte;
 mod op_codes;
 
 pub struct CPU {
@@ -19,6 +20,7 @@ pub struct CPU {
     delay_slot: bool,
 
     pub system_control: Rc<RefCell<SystemControl>>,
+    gte: GTE,
 
     interface: Rc<RefCell<Interface>>,
     pub dma_running: Rc<RefCell<bool>>,
@@ -46,6 +48,7 @@ impl CPU {
             delay_slot: false,
 
             system_control,
+            gte: GTE::new(),
 
             interface,
             dma_running,

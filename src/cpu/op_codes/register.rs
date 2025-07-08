@@ -154,7 +154,7 @@ impl CPU {
         self.write_register(rt, imm << 16);
     }
 
-    fn branch(&mut self, offset: u32) {
+    pub fn branch(&mut self, offset: u32) {
         let offset = offset << 2;
 
         self.branch = true;
