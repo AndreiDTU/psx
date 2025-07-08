@@ -21,8 +21,10 @@ impl GTE {
     pub fn issue_command(&mut self, command: u32) {
         self.R[63] = 0;
         self.cycles = match command.num() {
-            0x28 => self.sqr(command),
             0x01 => self.rtps(command),
+            0x06 => self.nclip(command),
+            0x28 => self.sqr(command),
+            0x2D => self.avsz3(command),
             _ => panic!("GTE command not implemented {command:08X}"),
         }
     }

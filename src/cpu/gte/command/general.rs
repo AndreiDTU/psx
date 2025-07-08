@@ -4,9 +4,9 @@ impl GTE {
     pub fn sqr(&mut self, command: u32) -> usize {
         let sf = command.sf();
         let ir = self.ir_vector().as_i64vec3();
-        let squared_vector = ir * ir >> (sf * 12);
+        let squared_vector = ir * ir;
 
-        let saturated_mac = self.update_mac_flags(squared_vector);
+        let saturated_mac = self.update_mac_vector_flags(squared_vector, sf != 0);
         self.write_mac_vector(saturated_mac);
         
         let saturated_ir = self.update_ir_flags(saturated_mac, true);
