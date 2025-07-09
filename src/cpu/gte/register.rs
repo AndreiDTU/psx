@@ -1,4 +1,4 @@
-use glam::{I16Vec2, I16Vec3, I64Vec3, IVec3, U8Vec4, UVec3, Vec3Swizzles};
+use glam::{I16Vec2, I16Vec3, I64Vec3, IVec2, IVec3, UVec3, Vec3Swizzles};
 
 use crate::cpu::gte::GTE;
 
@@ -13,14 +13,6 @@ impl GTE {
         let z = self.R[register_idx | 1] as i16;
 
         I16Vec3 { x, y, z }
-    }
-
-    pub fn rgbc(&self) -> U8Vec4 {
-        U8Vec4::from_array(self.R[6].to_le_bytes())
-    }
-
-    pub fn otz(&self) -> u16 {
-        self.R[7] as u16
     }
 
     pub fn write_otz(&mut self, value: u16) {
@@ -41,6 +33,19 @@ impl GTE {
 
     pub fn ir0(&self) -> i16 {
         self.R[8] as u16 as i16
+    }
+
+    pub fn write_ir0(&mut self, ir0: i16) {
+        self.R[8] = ir0 as u32;
+    }
+
+    pub fn update_ir0_flags(&mut self, raw_ir0: i64) -> i16 {
+        const IR0_MAX: i64 = 0x1000;
+
+        let overflow = raw_ir0 < 0 || raw_ir0 > IR0_MAX;
+        self.R[63] |= (overflow as u32) << 12;
+
+        raw_ir0.clamp(0, IR0_MAX) as i16
     }
 
     pub fn ir_vector(&self) -> I16Vec3 {
@@ -74,6 +79,25 @@ impl GTE {
         }
     }
 
+    pub fn update_ir_flags_rtp(&mut self, vector: IVec3, lm: bool, raw_mac3: i32) -> I16Vec3 {
+        let bugged_overflow = raw_mac3 < i16::MIN as i32 || raw_mac3 > i16::MAX as i32;
+        self.R[63] |= (bugged_overflow as u32) << 22;
+
+        if !lm {
+            let neg_overflow = vector.yx().cmplt(I16Vec2::MIN.as_ivec2());
+            let pos_overflow = vector.yx().cmpgt(I16Vec2::MAX.as_ivec2());
+
+            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 23;
+            vector.clamp(I16Vec3::MIN.as_ivec3(), I16Vec3::MAX.as_ivec3()).as_i16vec3()
+        } else {
+            let neg_overflow = vector.yx().cmplt(IVec2::ZERO);
+            let pos_overflow = vector.yx().cmpgt(I16Vec2::MAX.as_ivec2());
+
+            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 23;
+            vector.clamp(IVec3::ZERO, I16Vec3::MAX.as_ivec3()).as_i16vec3()
+        }
+    }
+
     pub fn screen_xy(&self, idx: u32) -> I16Vec2 {
         let register_idx = idx | 12;
         let x = self.R[register_idx] as i16;
@@ -82,16 +106,43 @@ impl GTE {
         I16Vec2 { x, y }
     }
 
+    pub fn write_sxy_fifo(&mut self, sx2: i16, sy2: i16) {
+        self.R[12] = self.R[13];
+        self.R[13] = self.R[14];
+        self.R[14] = (sx2 as u16 as u32) | ((sy2 as u16 as u32) << 16);
+    }
+
+    pub fn update_sxy2_flags(&mut self, raw_sx2: i64, raw_sy2: i64) -> [i16; 2] {
+        const SXY2_MIN: i64 = -0x400;
+        const SXY2_MAX: i64 = 0x3FF;
+
+        let sx2_overflow = raw_sx2 < SXY2_MIN || raw_sx2 > SXY2_MAX;
+        let sy2_overflow = raw_sy2 < SXY2_MIN || raw_sy2 > SXY2_MAX;
+
+        self.R[63] |= (sx2_overflow as u32) << 14;
+        self.R[63] |= (sy2_overflow as u32) << 13;
+
+        [
+            raw_sx2.clamp(SXY2_MIN, SXY2_MAX) as i16,
+            raw_sy2.clamp(SXY2_MIN, SXY2_MAX) as i16,
+        ]
+    }
+
     pub fn screen_z(&self, idx: u32) -> u16 {
         self.R[idx | 16] as u16
     }
 
-    pub fn write_screen_z(&mut self, idx: u32, value: u16) {
-        self.R[idx | 16] = value as u32;
+    pub fn write_screen_z_fifo(&mut self, value: u16) {
+        self.R[16] = self.R[17];
+        self.R[17] = self.R[18];
+        self.R[18] = self.R[19];
+        self.R[19] = value as u32;
     }
 
-    pub fn rgb(&self, idx: u32) -> U8Vec4 {
-        U8Vec4::from_array(self.R[idx | 20].to_le_bytes())
+    pub fn update_sz3_flags(&mut self, raw_sz3: i64) -> u16 {
+        let overflow = raw_sz3 > u16::MAX as i64 || raw_sz3 < 0;
+        self.R[63] |= (overflow as u32) << 18;
+        raw_sz3.clamp(0, u16::MAX as i64) as u16
     }
 
     pub fn write_color_fifo(&mut self) {
@@ -110,10 +161,6 @@ impl GTE {
 
         let rgb = raw_rgb.clamp(COLOR_MIN, COLOR_MAX).as_u8vec3().extend(code).to_array();
         self.R[22] = u32::from_le_bytes(rgb);
-    }
-
-    pub fn mac0(&self) -> i32 {
-        self.R[24] as i32
     }
 
     pub fn write_mac0(&mut self, value: i32) {
@@ -155,7 +202,7 @@ impl GTE {
             self.R[63] |= pos_overflow.bitmask() << 28;
             self.R[63] |= neg_overflow.bitmask() << 25;
 
-            raw_mac.clamp(I44_MIN, I44_MAX).as_ivec3()
+            raw_mac.as_ivec3()
         }
     }
 
@@ -184,8 +231,20 @@ impl GTE {
         (UVec3 { x: self.R[37], y: self.R[38], z: self.R[39] }).as_ivec3()
     }
 
+    pub fn screen_offset(&self) -> [i32; 2] {
+        [self.R[56] as i32, self.R[57] as i32]
+    }
+
     pub fn h(&self) -> u16 {
         self.R[58] as u16
+    }
+
+    pub fn dqa(&self) -> i16 {
+        self.R[59] as i16
+    }
+
+    pub fn dqb(&self) -> i32 {
+        self.R[60] as i32
     }
 
     pub fn zsf3(&self) -> i16 {

@@ -4,6 +4,8 @@ mod command;
 mod register;
 
 pub struct GTE {
+    UNR_TABLE: [u8; 0x101],
+
     R: Registers<64>,
 
     cycles: usize,
@@ -11,7 +13,14 @@ pub struct GTE {
 
 impl GTE {
     pub fn new() -> Self {
+        let UNR_TABLE: [u8; 0x101] = std::array::from_fn(|i| {
+            let i = i as i32;
+            std::cmp::max(0, (0x40000 / (i + 0x100) + 1) / 2 - 0x101) as u8
+        });
+
         Self {
+            UNR_TABLE,
+
             R: Registers { R: [0; 64] },
         
             cycles: 0,
@@ -21,11 +30,13 @@ impl GTE {
     pub fn issue_command(&mut self, command: u32) {
         self.R[63] = 0;
         self.cycles = match command.num() {
+            0x01 => self.rtps(command),
             0x06 => self.nclip(command),
             0x0C => self.op(command),
             0x28 => self.sqr(command),
             0x2D => self.avsz3(command),
             0x2E => self.avsz4(command),
+            0x30 => self.rtpt(command),
             0x3D => self.gpf(command),
             0x3E => self.gpl(command),
             _ => panic!("GTE command not implemented {command:08X}"),
