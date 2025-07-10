@@ -1,4 +1,4 @@
-use glam::{I16Vec2, I16Vec3, I64Vec3, IVec2, IVec3, UVec3, Vec3Swizzles};
+use glam::{I16Vec2, I16Vec3, I64Vec3, IVec2, IVec3, U8Vec4, UVec3, Vec3Swizzles};
 
 use crate::cpu::gte::GTE;
 
@@ -13,6 +13,10 @@ impl GTE {
         let z = self.R[register_idx | 1] as i16;
 
         I16Vec3 { x, y, z }
+    }
+
+    pub fn rgbc(&self) -> U8Vec4 {
+        U8Vec4::from_array(self.R[6].to_le_bytes())
     }
 
     pub fn write_otz(&mut self, value: u16) {
@@ -81,19 +85,19 @@ impl GTE {
 
     pub fn update_ir_flags_rtp(&mut self, vector: IVec3, lm: bool, raw_mac3: i32) -> I16Vec3 {
         let bugged_overflow = raw_mac3 < i16::MIN as i32 || raw_mac3 > i16::MAX as i32;
-        self.R[63] |= (bugged_overflow as u32) << 22;
+        self.R[63] |= (bugged_overflow as u32) << 24;
 
         if !lm {
             let neg_overflow = vector.yx().cmplt(I16Vec2::MIN.as_ivec2());
             let pos_overflow = vector.yx().cmpgt(I16Vec2::MAX.as_ivec2());
 
-            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 23;
+            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 22;
             vector.clamp(I16Vec3::MIN.as_ivec3(), I16Vec3::MAX.as_ivec3()).as_i16vec3()
         } else {
             let neg_overflow = vector.yx().cmplt(IVec2::ZERO);
             let pos_overflow = vector.yx().cmpgt(I16Vec2::MAX.as_ivec2());
 
-            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 23;
+            self.R[63] |= (pos_overflow | neg_overflow).bitmask() << 22;
             vector.clamp(IVec3::ZERO, I16Vec3::MAX.as_ivec3()).as_i16vec3()
         }
     }
@@ -106,7 +110,7 @@ impl GTE {
         I16Vec2 { x, y }
     }
 
-    pub fn write_sxy_fifo(&mut self, sx2: i16, sy2: i16) {
+    pub fn push_sxy_fifo(&mut self, sx2: i16, sy2: i16) {
         self.R[12] = self.R[13];
         self.R[13] = self.R[14];
         self.R[14] = (sx2 as u16 as u32) | ((sy2 as u16 as u32) << 16);
@@ -132,7 +136,7 @@ impl GTE {
         self.R[idx | 16] as u16
     }
 
-    pub fn write_screen_z_fifo(&mut self, value: u16) {
+    pub fn push_screen_z_fifo(&mut self, value: u16) {
         self.R[16] = self.R[17];
         self.R[17] = self.R[18];
         self.R[18] = self.R[19];
@@ -145,7 +149,11 @@ impl GTE {
         raw_sz3.clamp(0, u16::MAX as i64) as u16
     }
 
-    pub fn write_color_fifo(&mut self) {
+    pub fn pop_color_fifo(&mut self) -> U8Vec4 {
+        U8Vec4::from_array(self.R[20].to_le_bytes())
+    }
+
+    pub fn push_color_fifo(&mut self) {
         const COLOR_MIN: IVec3 = IVec3::ZERO;
         const COLOR_MAX: IVec3 = IVec3::splat(0xFF);
 
@@ -216,9 +224,21 @@ impl GTE {
     }
 
     pub fn rt(&self) -> [I16Vec3; 3] {
-        let row1 = I16Vec3 { x: self.R[32] as i16,         y: (self.R[32] >> 16) as i16, z: self.R[33] as i16        };
-        let row2 = I16Vec3 { x: (self.R[33] >> 16) as i16, y: self.R[34] as i16,         z: (self.R[34] >> 16) as i16};
-        let row3 = I16Vec3 { x: self.R[35] as i16,         y: (self.R[35] >> 16) as i16, z: self.R[36] as i16        };
+        let row1 = I16Vec3 {
+            x: self.R[32] as i16,
+            y: (self.R[32] >> 16) as i16,
+            z: self.R[33] as i16
+        };
+        let row2 = I16Vec3 {
+            x: (self.R[33] >> 16) as i16,
+            y: self.R[34] as i16,
+            z: (self.R[34] >> 16) as i16
+        };
+        let row3 = I16Vec3 {
+            x: self.R[35] as i16,
+            y: (self.R[35] >> 16) as i16,
+            z: self.R[36] as i16
+        };
 
         [row1, row2, row3]
     }
@@ -229,6 +249,58 @@ impl GTE {
 
     pub fn tr(&self) -> IVec3 {
         (UVec3 { x: self.R[37], y: self.R[38], z: self.R[39] }).as_ivec3()
+    }
+
+    pub fn llm(&self) -> [I16Vec3; 3] {
+        let row1 = I16Vec3 {
+            x: self.R[40] as i16,
+            y: (self.R[40] >> 16) as i16,
+            z: self.R[41] as i16
+        };
+        let row2 = I16Vec3 {
+            x: (self.R[41] >> 16) as i16,
+            y: self.R[42] as i16,
+            z: (self.R[42] >> 16) as i16
+        };
+        let row3 = I16Vec3 {
+            x: self.R[43] as i16,
+            y: (self.R[43] >> 16) as i16,
+            z: self.R[44] as i16
+        };
+
+        [row1, row2, row3]
+    }
+
+    pub fn bk(&self) -> IVec3 {
+        UVec3::from_array([self.R[45], self.R[46], self.R[47]]).as_ivec3()
+    }
+
+    pub fn lcm(&self) -> [I16Vec3; 3] {
+        let row1 = I16Vec3 {
+            x: self.R[48] as i16,
+            y: (self.R[48] >> 16) as i16,
+            z: self.R[49] as i16
+        };
+        let row2 = I16Vec3 {
+            x: (self.R[49] >> 16) as i16,
+            y: self.R[50] as i16,
+            z: (self.R[50] >> 16) as i16
+        };
+        let row3 = I16Vec3 {
+            x: self.R[51] as i16,
+            y: (self.R[51] >> 16) as i16,
+            z: self.R[52] as i16
+        };
+
+        [row1, row2, row3]
+    }
+
+    pub fn fc(&self) -> IVec3 {
+        IVec3 {
+            x: self.R[53] as i32,
+            y: self.R[54] as i32,
+            z: self.R[55] as i32,
+        }
     }
 
     pub fn screen_offset(&self) -> [i32; 2] {

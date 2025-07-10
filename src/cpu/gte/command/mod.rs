@@ -4,9 +4,9 @@ pub mod color;
 
 pub trait GTE_Command {
     fn sf(&self) -> bool;
-    fn mul_matrix(&self) -> Self;
-    fn mul_vector(&self) -> Self;
-    fn trans_vector(&self) -> Self;
+    fn mx(&self) -> Self;
+    fn v(&self) -> Self;
+    fn cv(&self) -> Self;
     fn lm(&self) -> bool;
     fn num(&self) -> Self;
 }
@@ -18,17 +18,17 @@ impl GTE_Command for u32 {
     }
 
     #[inline(always)]
-    fn mul_matrix(&self) -> Self {
+    fn mx(&self) -> Self {
         (*self >> 17) & 3
     }
 
     #[inline(always)]
-    fn mul_vector(&self) -> Self {
+    fn v(&self) -> Self {
         (*self >> 15) & 3
     }
 
     #[inline(always)]
-    fn trans_vector(&self) -> Self {
+    fn cv(&self) -> Self {
         (*self >> 13) & 3
     }
 

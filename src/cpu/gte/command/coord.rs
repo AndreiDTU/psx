@@ -4,17 +4,17 @@ use crate::cpu::gte::{command::GTE_Command, GTE};
 
 impl GTE {
     pub fn rtps(&mut self, command: u32) -> usize {
-        self.perspective_transformation(1, command.sf());
+        self.perspective_transformation(1, command.sf(), command.lm());
 
         15
     }
     pub fn rtpt(&mut self, command: u32) -> usize {
-        self.perspective_transformation(3, command.sf());
+        self.perspective_transformation(3, command.sf(), command.lm());
 
         23
     }
 
-    fn perspective_transformation(&mut self, vectors: u32, sf: bool) {
+    fn perspective_transformation(&mut self, vectors: u32, sf: bool, lm: bool) {
         let tr = self.tr().as_i64vec3();
         let rt = self.rt().map(|row| row.as_i64vec3());
         let [ofx, ofy] = self.screen_offset();
@@ -27,14 +27,14 @@ impl GTE {
             let saturated_mac = self.update_mac_vector_flags(raw_mac, sf);
             self.write_mac_vector(saturated_mac);
 
-            let saturated_ir = self.update_ir_flags_rtp(saturated_mac, false, raw_mac.z as i32);
+            let saturated_ir = self.update_ir_flags_rtp(saturated_mac, lm, (raw_mac.z >> 12) as i32);
             self.write_ir_vector(saturated_ir);
 
             let ir = self.ir_vector().as_i64vec3();
 
             let raw_sz3 = raw_mac.z >> ((1 - sf as i64) * 12);
             let saturated_sz3 = self.update_sz3_flags(raw_sz3);
-            self.write_screen_z_fifo(saturated_sz3);
+            self.push_screen_z_fifo(saturated_sz3);
 
             let unr_dividend = self.unr_divide();
 
@@ -49,7 +49,7 @@ impl GTE {
             let raw_sy2 = raw_mac0 >> 16;
 
             let [sx2, sy2] = self.update_sxy2_flags(raw_sx2, raw_sy2);
-            self.write_sxy_fifo(sx2, sy2);
+            self.push_sxy_fifo(sx2, sy2);
 
             let raw_mac0 = unr_dividend as i64 * self.dqa() as i64 + self.dqb() as i64;
             let saturated_mac0 = self.update_mac0_flags(raw_mac0);

@@ -22,7 +22,7 @@ const VRAM_HEIGHT: u32 = 512;
 const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("psxtest_gte.exe").unwrap();
+    // let exe_binding = std::fs::read("quad.exe").unwrap();
     // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
@@ -142,7 +142,7 @@ fn sideload_exe(cpu: &mut CPU, interface: Rc<RefCell<Interface>>, exe: &[u8]) {
 
     cpu.next_pc = initial_pc;
 
-    amidog_args(interface);
+    // amidog_args(interface);
 }
 
 #[allow(unused)]
