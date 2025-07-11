@@ -1,11 +1,13 @@
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, path::Path, rc::Rc};
 
 use bitflags::bitflags;
 
-use crate::bus::interrupt::{Interrupt, IRQ};
+use crate::{bus::interrupt::{Interrupt, IRQ}, cd_rom::bin::{sector::Sector, DiskAddress, DiskMap, DiskTrait}};
 
-const AVERAGE_IRQ_DELAY: usize = 50000;
-const ID_SECOND_DELAY: usize = 0x4A00;
+mod command;
+mod bin;
+
+const AVERAGE_IRQ_DELAY: usize = 0xC4E1;
 
 bitflags! {
     pub struct CD_ROM_STATUS: u8 {
@@ -20,8 +22,27 @@ bitflags! {
     }
 }
 
+bitflags! {
+    pub struct CD_ROM_MODE: u8 {
+        const SPEED       = 0x80;
+        const XA_ADPCM    = 0x40;
+        const SECTOR_SIZE = 0x20;
+        const IGNORE      = 0x10;
+        const XA_FILTER   = 0x08;
+        const REPORT      = 0x04;
+        const AUTO_PAUSE  = 0x02;
+        const CDDA        = 0x01;
+    }
+}
+
 pub struct CD_ROM {
+    disk: DiskMap,
+    current_sector: Sector,
+    sector_pointer: usize,
+
     status: CD_ROM_STATUS,
+    mode: CD_ROM_MODE,
+
     registers: [u8; 16],
     current_bank: usize,
 
@@ -36,13 +57,23 @@ pub struct CD_ROM {
     irq_delay: usize,
     irq: bool,
 
+    seek_target: DiskAddress,
+    read_addr: DiskAddress,
+
     interrupt: Rc<RefCell<Interrupt>>,
 }
 
 impl CD_ROM {
-    pub fn new(interrupt: Rc<RefCell<Interrupt>>) -> Self {
-        Self {
+    pub fn new<P>(interrupt: Rc<RefCell<Interrupt>>, bin_path: P) -> anyhow::Result<CD_ROM>
+    where P: AsRef<Path> {
+        Ok(Self {
+            disk: DiskMap::from_bin(bin_path)?,
+            current_sector: Sector::default(),
+            sector_pointer: 0,
+
             status: CD_ROM_STATUS::from_bits_truncate(0),
+            mode: CD_ROM_MODE::from_bits_truncate(0),
+
             registers: [0; 16],
             current_bank: 0,
 
@@ -55,9 +86,12 @@ impl CD_ROM {
 
             irq_delay: AVERAGE_IRQ_DELAY,
             irq: false,
+
+            seek_target: DiskAddress::default(),
+            read_addr: DiskAddress::default(),
             
             interrupt,
-        }
+        })
     }
 
     pub fn tick(&mut self) {
@@ -69,7 +103,9 @@ impl CD_ROM {
                 self.irq = false;
                 match self.second_response {
                     SecondResponse::GetID => self.get_id_second_response(),
-                    _ => {}
+                    SecondResponse::SeekL => self.seekL_second_response(),
+                    SecondResponse::ReadN => self.readN_second_response(),
+                    SecondResponse::None => {}
                 }
                 self.second_response = SecondResponse::None;
             }
@@ -130,51 +166,15 @@ impl CD_ROM {
         self.result_idx = 0;
         println!("CD-ROM command: {command:02X}");
         match command {
-            0x01 => self.send_status(),
-            0x1A => self.get_id(),
+            0x01 => self.send_status(3),
+            0x02 => self.setloc(),
+            0x06 => self.readN(),
+            0x0E => self.setmode(),
+            0x15 => self.seekL(),
             0x19 => self.test(),
+            0x1A => self.get_id(),
             _ => panic!("CD-ROM command not yet implemented. {command:02X}"),
         }
-    }
-
-    fn send_status(&mut self) {
-        self.result_fifo[self.result_idx] = self.status.bits();
-        self.result_size = 0;
-        self.result_fifo_empty = false;
-
-        self.schedule_int(3);
-    }
-
-    fn get_id(&mut self) {
-        self.status.insert(CD_ROM_STATUS::SHELL);
-        self.send_status();
-        self.second_response = SecondResponse::GetID;
-    }
-
-    fn get_id_second_response(&mut self) {
-        self.result_idx = 0;
-        self.result_size = 8;
-        *self.result_fifo[self.result_idx..].first_chunk_mut().unwrap() = NO_DISK;
-        self.status.insert(CD_ROM_STATUS::SHELL);
-        self.schedule_int(5);
-        self.irq_delay = ID_SECOND_DELAY;
-    }
-
-    fn test(&mut self) {
-        let sub_op = self.parameters.pop_front().unwrap();
-        println!("CD-ROM test sub-op: {sub_op:02X}");
-        match sub_op {
-            0x20 => self.test_version(),
-            _ => panic!("CD-ROM test sub-op not yet implemented. {sub_op:02X}"),
-        }
-    }
-
-    fn test_version(&mut self) {
-        *self.result_fifo[self.result_idx..].first_chunk_mut().unwrap() = VERSION;
-        self.result_size = 3;
-        self.result_fifo_empty = false;
-
-        self.schedule_int(3);
     }
 
     fn schedule_int(&mut self, int: u8) {
@@ -218,10 +218,9 @@ const ATV2:      usize = 13;
 const ATV3:      usize = 14;
 const ADPCTL:    usize = 15;
 
-const VERSION: [u8; 4] = [0x94, 0x09, 0x19, 0xC0];
-const NO_DISK: [u8; 8] = [0x08, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
-
 enum SecondResponse {
     None,
     GetID,
+    SeekL,
+    ReadN,
 }

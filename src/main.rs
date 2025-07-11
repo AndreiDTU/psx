@@ -1,6 +1,6 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, env};
 #[allow(unused_imports)]
 use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Duration, Instant}};
 
@@ -22,7 +22,9 @@ const VRAM_HEIGHT: u32 = 512;
 const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 
 fn main() -> Result<(), anyhow::Error> {
-    // let exe_binding = std::fs::read("quad.exe").unwrap();
+    let args: Vec<_> = env::args().collect();
+    let disk = &args[1];
+    // let exe_binding = std::fs::read("psxtest_cpx.exe").unwrap();
     // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();
@@ -45,7 +47,7 @@ fn main() -> Result<(), anyhow::Error> {
     sio0.borrow_mut().connect_device(pad1.clone(), 0);
     sio0.borrow_mut().connect_device(pad2.clone(), 1);
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
-    let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone())));
+    let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone(), disk)?));
     let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone(), sio0.clone())?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
@@ -142,7 +144,7 @@ fn sideload_exe(cpu: &mut CPU, interface: Rc<RefCell<Interface>>, exe: &[u8]) {
 
     cpu.next_pc = initial_pc;
 
-    // amidog_args(interface);
+    amidog_args(interface);
 }
 
 #[allow(unused)]

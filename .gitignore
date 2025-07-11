@@ -1,5 +1,6 @@
 /target
-SCPH1001.bin
+*.bin
 *.log
 *.exe
 *.txt
+*.cue

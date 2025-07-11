@@ -129,7 +129,7 @@ impl CPU {
                     0b101010 => self.slt(instruction),
                     0b101011 => self.sltu(instruction),
                     _ => {
-                        println!("Illegal instruction: {:08X}", instruction);
+                        // println!("Illegal instruction: {:08X}", instruction);
                         self.raise_exception(Cause::RI);
                     },
                 }
@@ -174,7 +174,7 @@ impl CPU {
             0b111010 => self.swc2(instruction),
             0b111011 => self.raise_exception(Cause::CpU),
             _ => {
-                println!("Illegal instruction: {:08X}", instruction);
+                // println!("Illegal instruction: {:08X}", instruction);
                 self.raise_exception(Cause::RI);
             },
         }
@@ -183,7 +183,7 @@ impl CPU {
     fn raise_exception(&mut self, cause: Cause) {
         // println!("Raised exception on cause: {:#?}", cause);
 
-        if cause == Cause::INT {
+        if cause == Cause::INT && self.delay_slot {
             self.pc = self.current_pc;
             self.next_pc = self.next_pc.wrapping_sub(4);
         }

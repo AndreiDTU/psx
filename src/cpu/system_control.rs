@@ -7,7 +7,9 @@ pub struct SystemControl {
 
 impl SystemControl {
     pub fn new() -> Self {
-        Self { R: Registers {R: [0; 64]} }
+        let mut R = Registers { R: [0; 64] };
+        R[15] = 0x0000_0002;
+        Self { R }
     }
 
     pub fn write_register(&mut self, register: u32, value: u32) {
@@ -15,7 +17,7 @@ impl SystemControl {
         match register {
             3 | 5 | 7 | 9 | 11 | 12 =>
                 self.R[register] = value,
-            13 => self.R[register] |= value & 0x300,
+            13 => self.R[register] = (self.R[register] & !0x300) | (value & 0x300),
             _ => {}
         }
     }
