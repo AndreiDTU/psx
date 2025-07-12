@@ -28,6 +28,7 @@ impl GTE {
     }
 
     pub fn issue_command(&mut self, command: u32) {
+        // println!("GTE command: {command:08X}");
         self.R[63] = 0;
         self.cycles = match command.num() {
             0x01 => self.rtps(command),
@@ -116,6 +117,7 @@ impl GTE {
 
     pub fn write_ctrl_register(&mut self, register: u32, value: u32) {
         let ctrl_reg = register + 32;
+        // println!("Write {value:08X} to cop2r{register}; GTE R[{ctrl_reg}] = {:08X}", self.R[ctrl_reg]);
         match ctrl_reg {
             58 => self.R[ctrl_reg] = value as u16 as u32,
             63 => self.R[ctrl_reg] = (self.R[ctrl_reg] & 0x8000_0FFF) | (value & !0x8000_0FFF),

@@ -30,6 +30,7 @@ impl CD_ROM {
 
         self.send_status(2);
         self.irq_delay = SEEKL_SECOND_DELAY;
+        self.second_response = SecondResponse::None;
     }
 }
 

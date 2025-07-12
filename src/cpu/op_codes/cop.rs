@@ -27,7 +27,8 @@ impl CPU {
     }
 
     pub fn cop2(&mut self, instruction: u32) {
-        if instruction & (1 << 25) != 0 {
+        // println!("COP2 instruction: {instruction:08X}");
+        if instruction & const {1 << 25} != 0 {
             self.gte.issue_command(instruction);
         } else {
             let cop_instruction = instruction.rs();
@@ -43,6 +44,7 @@ impl CPU {
     }
 
     fn mfc2(&mut self, instruction: u32) {
+        // println!("MFC2 instruction: {instruction:08X}");
         let rt = instruction.rt();
         let rd = instruction.rd();
         
@@ -51,6 +53,7 @@ impl CPU {
     }
 
     fn cfc2(&mut self, instruction: u32) {
+        // println!("CFC2 instruction: {instruction:08X}");
         let rt = instruction.rt();
         let rd = instruction.rd();
         
@@ -59,6 +62,7 @@ impl CPU {
     }
 
     fn mtc2(&mut self, instruction: u32) {
+        // println!("MTC2 instruction: {instruction:08X}");
         let rt = instruction.rt();
         let rd = instruction.rd();
 
@@ -66,6 +70,7 @@ impl CPU {
     }
 
     fn ctc2(&mut self, instruction: u32) {
+        // println!("CTC2 instruction: {instruction:08X}");
         let rt = instruction.rt();
         let rd = instruction.rd();
 
@@ -73,6 +78,7 @@ impl CPU {
     }
 
     fn bc2(&mut self, instruction: u32) {
+        // println!("BC2 instruction: {instruction:08X}");
         if instruction & 0x0001_0000 != 0 {
             let offset = instruction.imm_se();
             self.branch(offset);
@@ -80,6 +86,7 @@ impl CPU {
     }
 
     pub fn lwc2(&mut self, instruction: u32) {
+        // println!("LWC2 instruction: {instruction:08X}");
         let rs = instruction.rs();
         let rt = instruction.rt();
         let offset = instruction.imm_se();
@@ -95,6 +102,7 @@ impl CPU {
     }
 
     pub fn swc2(&mut self, instruction: u32) {
+        // println!("SWC2 instruction: {instruction:08X}");
         let rs = instruction.rs();
         let rt = instruction.rt();
         let offset = instruction.imm_se();

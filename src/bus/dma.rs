@@ -50,7 +50,7 @@ impl DMA {
                     2 => self.linked_list_transfer(channel),
                     _ => self.block_transfer(channel),
                 }
-                3 => panic!("CDROM not implemented."),
+                3 => self.block_transfer(channel),
                 4 => panic!("SPU not implemented."),
                 5 => panic!("PIO not implemented."),
                 6 => self.block_transfer(channel),
@@ -143,6 +143,12 @@ impl DMA {
             } else {
                 let value = match channel {
                     2 => self.interface.borrow_mut().read32(0x1F80_1810),
+                    3 => {
+                        let mut borrowed = self.interface.borrow_mut();
+                        u32::from_le_bytes(std::array::from_fn(|_| {
+                            borrowed.read8(0x1F80_1802)
+                        }))
+                    }
                     6 => match remaining_size {
                         1 => 0x00FF_FFFF,
                         _ => addr.wrapping_sub(4) & 0x001F_FFFF,

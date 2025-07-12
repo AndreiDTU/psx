@@ -3,7 +3,7 @@ use crate::cd_rom::CD_ROM;
 impl CD_ROM {
     pub fn test(&mut self) {
         let sub_op = self.parameters.pop_front().unwrap();
-        println!("CD-ROM test sub-op: {sub_op:02X}");
+        // println!("CD-ROM test sub-op: {sub_op:02X}");
         match sub_op {
             0x20 => self.test_version(),
             _ => panic!("CD-ROM test sub-op not yet implemented. {sub_op:02X}"),

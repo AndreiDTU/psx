@@ -21,6 +21,7 @@ impl CD_ROM {
         // self.status.insert(CD_ROM_STATUS::SHELL);
         self.schedule_int(2);
         self.irq_delay = ID_SECOND_DELAY;
+        self.second_response = SecondResponse::None;
     }
 }
 

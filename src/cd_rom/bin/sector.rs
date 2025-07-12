@@ -4,22 +4,22 @@ use bitflags::bitflags;
 
 use crate::cd_rom::bin::DiskAddress;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Sector {
     sub_header: SubHeader,
-    data: [u8; 2328],
+    data: [u8; 0x924],
 }
 
 impl Sector {
     pub fn from_bytes(bytes: &[u8]) -> (DiskAddress, Sector) {
-        let mut data = [0; 2328];
+        let mut data = [0; 0x924];
         (
             DiskAddress::from_bytes(&bytes[12..=15]),
             Sector {
                 sub_header: SubHeader::from_bytes(&bytes[16..=23]),
-                data: *bytes[24..].first_chunk().unwrap_or({
+                data: *bytes[12..].first_chunk().unwrap_or({
                     for i in 24..bytes.len() {
-                        data[i - 24] = bytes[i];
+                        data[i - 12] = bytes[i];
                     }
 
                     &data
@@ -41,13 +41,7 @@ impl Index<usize> for Sector {
     }
 }
 
-impl Default for Sector {
-    fn default() -> Self {
-        Self { sub_header: SubHeader::default(), data: [0; 2328] }
-    }
-}
-
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct SubHeader {
     file_num: u8,
     channel_num: u8,
@@ -71,7 +65,7 @@ impl SubHeader {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy, Default, Debug)]
     pub struct SubMode: u8 {
         const EOF       = 0x80;
         const REAL_TIME = 0x40;
@@ -85,7 +79,7 @@ bitflags! {
 }
 
 bitflags! {
-    #[derive(Clone, Copy, Default)]
+    #[derive(Clone, Copy, Default, Debug)]
     pub struct CodingInfo: u8 {
         const emphasis = 0x40;
         const bitssamp = 0x10;
