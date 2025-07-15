@@ -1,47 +1,45 @@
-use crate::cd_rom::{bin::sector::Sector, SecondResponse, CD_ROM, CD_ROM_MODE, CD_ROM_STATUS};
+use crate::cd_rom::{bin::sector::Sector, CD_ROM, CD_ROM_INT, CD_ROM_MODE, CD_ROM_STATUS};
 
 impl CD_ROM {
     pub fn readN(&mut self) {
-        self.send_status(3);
-
-        self.second_response = SecondResponse::ReadN;
+        self.sector_pointer = 0;
+        self.read_addr = self.seek_target;
+        self.send_status(3, None, Some(Self::readN_second_response));
     }
 
     pub fn readN_second_response(&mut self) {
-        self.sector_pointer = 0;
-        self.read_func = RDDATA_READ[self.mode.contains(CD_ROM_MODE::SECTOR_SIZE) as usize];
+        println!("{:#?}", self.read_addr);
         match self.disk.get(&self.read_addr) {
             Some(sector) => {
-                Self::load_sector(&mut self.sector_buffer, sector);
+                self.load_sector(*sector);
 
                 self.status.insert(CD_ROM_STATUS::READ);
                 self.status.remove(CD_ROM_STATUS::SEEK);
                 self.status.remove(CD_ROM_STATUS::PLAY);
 
                 let speed = INT1_RATE[self.mode.contains(CD_ROM_MODE::SPEED) as usize];
-                self.irq_delay = speed;
-                self.schedule_int(1);
+                self.send_status(1, Some(speed), Some(Self::readN_second_response));
 
                 self.read_addr.increment();
             }
             None => {
                 let speed = INT1_RATE[self.mode.contains(CD_ROM_MODE::SPEED) as usize];
-                self.irq_delay = speed;
-                self.schedule_int(4);
+                self.int_queue.push_back(CD_ROM_INT {
+                    num: 4,
+                    delay: speed,
+                    func: None,
+                });
             }
         }
     }
 
-    fn load_sector(sector_buffer: &mut [Option<Sector>; 2], sector: &Sector) {
-        match sector_buffer[0] {
-            None => sector_buffer[0] = Some(*sector),
-            Some(_) => match sector_buffer[1] {
-                None => sector_buffer[1] = Some(*sector),
-                Some(_) => {
-                    sector_buffer[0] = sector_buffer[1];
-                    sector_buffer[1] = Some(*sector);
-                }
-            }
+    fn load_sector(&mut self, sector: Sector) {
+        let read_func = RDDATA_READ[self.mode.contains(CD_ROM_MODE::SECTOR_SIZE) as usize];
+        self.sector_buffer[0] = self.sector_buffer[1];
+        self.sector_buffer[1] = Some((sector, read_func));
+        
+        if self.sector_buffer[0].is_none() {
+            self.sector_buffer[0] = self.sector_buffer[1];
         }
     }
 }

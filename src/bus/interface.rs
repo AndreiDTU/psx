@@ -52,6 +52,9 @@ const REVERB_END: u32 = REVERB_START + 0x40;
 const EXPANSION_2_START: u32 = 0x1F802000;
 const EXPANSION_2_END: u32 = EXPANSION_2_START + 66;
 
+const PCSX_START: u32 = 0x1F802080;
+const PCSX_END: u32 = PCSX_START + 8;
+
 const BIOS_START: u32 = 0x1FC0_0000;
 const BIOS_END: u32 = BIOS_START + (512 * 1024);
 
@@ -163,6 +166,7 @@ impl Interface {
             VOICE_START..VOICE_END => 0,
             SPU_START..SPU_END => 0,
             REVERB_START..REVERB_END => 0,
+            EXPANSION_2_START..EXPANSION_2_END => 0,
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),
         }
@@ -234,6 +238,12 @@ impl Interface {
             VOICE_START..VOICE_END => {},
             SPU_START..SPU_END => {},
             REVERB_START..REVERB_END => {},
+            PCSX_START..PCSX_END => {
+                match addr - PCSX_START {
+                    2 => println!("Exited with code {value:04X}"),
+                    _ => {}
+                }
+            }
             _ => panic!("Write 16-bit access at unmapped address: {:08X}", addr),
         }
     }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, fmt::Debug, path::Path};
 
 use crate::cd_rom::{bin::sector::Sector};
 
@@ -27,7 +27,7 @@ impl DiskTrait for DiskMap {
     }
 }
 
-#[derive(Default, Clone, Copy, Hash, PartialEq, Eq, Debug)]
+#[derive(Default, Clone, Copy, Hash, PartialEq, Eq)]
 pub struct DiskAddress {
     min: u8,
     sec: u8,
@@ -57,5 +57,15 @@ impl DiskAddress {
         self.sec -= 0x60 * minute_carry;
         self.min += minute_carry;
         carry_lo(&mut self.min);
+    }
+}
+
+impl Debug for DiskAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DiskAddress")
+            .field("min", &format!("{:02X}",  self.min))
+            .field("sec", &format!("{:02X}",  self.sec))
+            .field("frame", &format!("{:02X}",  self.frame))
+            .finish()
     }
 }

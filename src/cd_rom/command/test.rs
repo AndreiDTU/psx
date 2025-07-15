@@ -1,4 +1,4 @@
-use crate::cd_rom::CD_ROM;
+use crate::cd_rom::{AVERAGE_IRQ_DELAY, CD_ROM, CD_ROM_INT};
 
 impl CD_ROM {
     pub fn test(&mut self) {
@@ -15,7 +15,11 @@ impl CD_ROM {
         self.result_size = 3;
         self.result_fifo_empty = false;
 
-        self.schedule_int(3);
+        self.int_queue.push_back(CD_ROM_INT {
+            num: 3,
+            delay: AVERAGE_IRQ_DELAY,
+            func: None,
+        });
     }
 }
 

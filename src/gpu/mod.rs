@@ -139,6 +139,7 @@ impl GPU {
 
             self.even_odd_frame = !self.even_odd_frame;
             self.interrupt.borrow_mut().request(IRQ::VBLANK);
+            self.timer.borrow_mut().enter_vblank();
 
             return true;
         }

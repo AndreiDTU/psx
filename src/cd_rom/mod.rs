@@ -37,12 +37,12 @@ bitflags! {
 
 pub struct CD_ROM {
     disk: DiskMap,
-    sector_buffer: [Option<Sector>; 2],
+    sector_buffer: [Option<(Sector, fn(&mut CD_ROM) -> u8)>; 2],
     sector_pointer: usize,
-    read_func: fn(&mut CD_ROM) -> u8,
 
     status: CD_ROM_STATUS,
     mode: CD_ROM_MODE,
+    mute: bool,
 
     registers: [u8; 16],
     current_bank: usize,
@@ -53,11 +53,8 @@ pub struct CD_ROM {
     result_idx: usize,
     result_size: usize,
     result_fifo_empty: bool,
-    second_response: SecondResponse,
-
-    irq_delay: usize,
-    irq_pending: bool,
-    irq: u8,
+    int_queue: VecDeque<CD_ROM_INT>,
+    pending_int: Option<CD_ROM_INT>,
 
     seek_target: DiskAddress,
     read_addr: DiskAddress,
@@ -72,10 +69,10 @@ impl CD_ROM {
             disk: DiskMap::from_bin(bin_path)?,
             sector_buffer: [None; 2],
             sector_pointer: 0,
-            read_func: CD_ROM::read_0x800,
 
-            status: CD_ROM_STATUS::from_bits_truncate(0),
+            status: CD_ROM_STATUS::from_bits_truncate(0x02),
             mode: CD_ROM_MODE::from_bits_truncate(0),
+            mute: false,
 
             registers: [0; 16],
             current_bank: 0,
@@ -85,11 +82,9 @@ impl CD_ROM {
             result_idx: 0,
             result_size: 0,
             result_fifo_empty: false,
-            second_response: SecondResponse::None,
 
-            irq_delay: AVERAGE_IRQ_DELAY,
-            irq_pending: false,
-            irq: 0,
+            int_queue: VecDeque::new(),
+            pending_int: None,
 
             seek_target: DiskAddress::default(),
             read_addr: DiskAddress::default(),
@@ -99,23 +94,21 @@ impl CD_ROM {
     }
 
     pub fn tick(&mut self) {
-        if self.irq_pending {
-            self.irq_delay -= 1;
-            if self.irq_delay == 0 {
-                self.registers[HINTSTS] = (self.registers[HINTSTS] & !7) | self.irq;
-                self.interrupt.borrow_mut().request(IRQ::CDROM);
-                self.irq_delay = AVERAGE_IRQ_DELAY;
-                self.irq_pending = false;
-                // println!("Firing CD-ROM INT{}", self.registers[HINTSTS] & 7);
-                match self.second_response {
-                    SecondResponse::GetID => self.get_id_second_response(),
-                    SecondResponse::SeekL => self.seekL_second_response(),
-                    SecondResponse::ReadN => self.readN_second_response(),
-                    SecondResponse::Pause => self.pause_second_response(),
-                    SecondResponse::Init => self.init_second_response(),
-                    SecondResponse::None => {}
+        if let Some(int) = &mut self.pending_int {
+            int.delay -= 1;
+            if int.delay == 0 {
+                self.registers[HINTSTS] = (self.registers[HINTSTS] & !7) | int.num;
+                if self.registers[HINTMSK] & self.registers[HINTSTS] != 0 {
+                    println!("Firing CD-ROM INT{}", self.registers[HINTSTS] & 7);
+                    self.interrupt.borrow_mut().request(IRQ::CDROM);
                 }
+                if let Some(func) = int.func {
+                    func(self);
+                }
+                self.pending_int = None;
             }
+        } else {
+            self.pending_int = self.int_queue.pop_front();
         }
     }
 
@@ -140,7 +133,7 @@ impl CD_ROM {
                 result
             }
             RDDATA => {
-                (self.read_func)(self)
+                (self.sector_buffer[0].unwrap().1)(self)
             },
             _ => self.registers[register]
         };
@@ -151,33 +144,35 @@ impl CD_ROM {
     fn read_0x800(&mut self) -> u8 {
         const RDDATA_0X800: [fn(&mut CD_ROM) -> u8; 2] = [CD_ROM::read_0x800, CD_ROM::pad_0x800];
 
-        let byte = self.sector_buffer[0].unwrap()[self.sector_pointer + 12];
+        let byte = self.sector_buffer[0].unwrap().0[self.sector_pointer + 12];
         
         self.sector_pointer += 1;
         let pad = self.sector_pointer == 0x800;
-        self.read_func = RDDATA_0X800[pad as usize];
+        self.sector_buffer[0].unwrap().1 = RDDATA_0X800[pad as usize];
+        self.sector_pointer *= (!pad) as usize;
 
         byte
     }
 
     fn pad_0x800(&mut self) -> u8 {
-        self.sector_buffer[0].unwrap()[const {0x800 - 8 + 12}]
+        self.sector_buffer[0].unwrap().0[const {0x800 - 8 + 12}]
     }
 
     fn read_0x924(&mut self) -> u8 {
         const RDDATA_0X924: [fn(&mut CD_ROM) -> u8; 2] = [CD_ROM::read_0x924, CD_ROM::pad_0x924];
 
-        let byte = self.sector_buffer[0].unwrap()[self.sector_pointer];
+        let byte = self.sector_buffer[0].unwrap().0[self.sector_pointer];
         
         self.sector_pointer += 1;
         let pad = self.sector_pointer == 0x924;
-        self.read_func = RDDATA_0X924[pad as usize];
+        self.sector_buffer[0].unwrap().1 = RDDATA_0X924[pad as usize];
+        self.sector_pointer *= (!pad) as usize;
 
         byte
     }
 
     fn pad_0x924(&mut self) -> u8 {
-        self.sector_buffer[0].unwrap()[const {0x924 - 4}]
+        self.sector_buffer[0].unwrap().0[const {0x924 - 4}]
     }
 
     pub fn write8(&mut self, offset: u32, value: u8) {
@@ -204,26 +199,19 @@ impl CD_ROM {
 
     fn execute(&mut self, command: u8) {
         self.result_idx = 0;
-        // println!("CD-ROM command: {command:02X}");
+        println!("CD-ROM command: {command:02X}");
         match command {
-            0x01 => self.send_status(3),
+            0x01 => self.send_status(3, None, None),
             0x02 => self.setloc(),
             0x06 => self.readN(),
             0x09 => self.pause(),
             0x0A => self.init(),
+            0x0C => self.demute(),
             0x0E => self.setmode(),
             0x15 => self.seekL(),
             0x19 => self.test(),
             0x1A => self.get_id(),
             _ => panic!("CD-ROM command not yet implemented. {command:02X}"),
-        }
-    }
-
-    fn schedule_int(&mut self, int: u8) {
-        self.irq = int;
-        
-        if self.registers[HINTMSK] & ((self.registers[HINTSTS] & !7) | int) != 0 {
-            self.irq_pending = true;
         }
     }
 }
@@ -260,11 +248,9 @@ const ATV2:      usize = 13;
 const ATV3:      usize = 14;
 const ADPCTL:    usize = 15;
 
-enum SecondResponse {
-    None,
-    GetID,
-    SeekL,
-    ReadN,
-    Pause,
-    Init,
+#[derive(Clone, Copy)]
+pub struct CD_ROM_INT {
+    num: u8,
+    delay: usize,
+    func: Option<fn(&mut CD_ROM)>,
 }

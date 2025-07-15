@@ -1,4 +1,4 @@
-use crate::cd_rom::{DiskAddress, SecondResponse, CD_ROM, CD_ROM_STATUS};
+use crate::cd_rom::{DiskAddress, CD_ROM, CD_ROM_STATUS};
 
 impl CD_ROM {
     pub fn setloc(&mut self) {
@@ -8,7 +8,7 @@ impl CD_ROM {
             self.parameters.pop_front().unwrap()
         ]);
 
-        self.send_status(3);
+        self.send_status(3, None, None);
     }
 
     pub fn seekL(&mut self) {
@@ -18,9 +18,7 @@ impl CD_ROM {
         self.status.remove(CD_ROM_STATUS::READ);
         self.status.remove(CD_ROM_STATUS::PLAY);
 
-        self.send_status(3);
-
-        self.second_response = SecondResponse::SeekL;
+        self.send_status(3, None, Some(Self::seekL_second_response));
     }
 
     pub fn seekL_second_response(&mut self) {
@@ -28,9 +26,7 @@ impl CD_ROM {
         self.status.remove(CD_ROM_STATUS::SEEK);
         self.status.remove(CD_ROM_STATUS::PLAY);
 
-        self.send_status(2);
-        self.irq_delay = SEEKL_SECOND_DELAY;
-        self.second_response = SecondResponse::None;
+        self.send_status(2, Some(SEEKL_SECOND_DELAY), None);
     }
 }
 

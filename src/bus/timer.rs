@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, hint::unreachable_unchecked, rc::Rc};
 
 use crate::bus::interrupt::{Interrupt, IRQ};
 
@@ -11,6 +11,7 @@ pub struct Timer {
     irq_enabled: [bool; 3],
 
     sysclock_8: usize,
+    vblank: bool,
 
     interrupt: Rc<RefCell<Interrupt>>,
 }
@@ -25,6 +26,7 @@ impl Timer {
             irq_enabled: [true; 3],
 
             sysclock_8: 0,
+            vblank: false,
 
             interrupt
         }
@@ -35,7 +37,13 @@ impl Timer {
         self.tick_counter_1();
         self.tick_counter_2();
 
+        self.vblank = false;
+
         // println!("Timers [{:04X}, {:04X}, {:04X}]", self.counter[0], self.counter[1], self.counter[2]);
+    }
+
+    pub fn enter_vblank(&mut self) {
+        self.vblank = true;
     }
 
     fn tick_counter_0(&mut self) {
@@ -67,26 +75,34 @@ impl Timer {
 
     fn tick_counter_1(&mut self) {
         let counter = &mut self.counter[1];
-        let mode = self.mode[1];
+        let mode = &mut self.mode[1];
         let target = self.target[1];
-        let target_enabled = mode & 0x08 != 0;
+        let target_enabled = *mode & 0x08 != 0;
         let enabled = &mut self.irq_enabled[1];
 
-        if mode & 1 != 0 {
-            panic!("Timer 1 sync modes not implemented")
+        if *mode & 1 != 0 {
+            let sync = (*mode >> 1) & 3;
+            match sync {
+                3 => {
+                    *mode &= !1;
+                    *mode |= !(self.vblank as u32);
+                }
+                0 | 1 | 2 => panic!("Timer 1 sync mode {sync} not implemented!"),
+                _ => unsafe { unreachable_unchecked() }
+            }
         } else {
             *counter += 1;
             if *counter == 0xFFFF {
                 *counter = 0;
-                if mode & 0x20 != 0 && *enabled {
+                if *mode & 0x20 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR1);
-                    *enabled = mode & 0x40 != 0;
+                    *enabled = *mode & 0x40 != 0;
                 }
             } else if target_enabled && *counter == target {
                 *counter = 0;
-                if mode & 0x10 != 0 && *enabled {
+                if *mode & 0x10 != 0 && *enabled {
                     self.interrupt.borrow_mut().request(IRQ::TMR1);
-                    *enabled = mode & 0x40 != 0;
+                    *enabled = *mode & 0x40 != 0;
                 }
             }
         }
@@ -99,9 +115,10 @@ impl Timer {
         let target_enabled = *mode & 0x10 != 0;
         let enabled = &mut self.irq_enabled[2];
         let source = *mode & 0x200 != 0;
+        let sync = (*mode >> 1) & 3;
 
-        if *mode & 1 != 0 {
-            panic!("Timer 2 sync modes not implemented")
+        if *mode & 1 != 0 && (sync == 0 || sync == 3) {
+            /* Sync Mode 0 and 3 stall the timer */
         } else if !source || self.sysclock_8 == 0 {
             self.sysclock_8 = 8;
             *counter += 1;

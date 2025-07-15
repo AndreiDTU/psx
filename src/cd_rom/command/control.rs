@@ -1,34 +1,45 @@
-use crate::cd_rom::{SecondResponse, CD_ROM, CD_ROM_MODE, CD_ROM_STATUS};
+use crate::cd_rom::{CD_ROM, CD_ROM_INT, CD_ROM_MODE, CD_ROM_STATUS};
 
 impl CD_ROM {
     pub fn setmode(&mut self) {
         self.mode = CD_ROM_MODE::from_bits_truncate(self.parameters.pop_front().unwrap());
 
-        self.send_status(3);
+        self.send_status(3, None, None);
     }
 
     pub fn init(&mut self) {
         const INIT_FIRST_DELAY: usize = 0x0001_3CCE;
 
         self.mode = CD_ROM_MODE::from_bits_truncate(0x20);
-
-        self.send_status(3);
-
-        self.second_response = SecondResponse::Init;
-        self.irq_delay = INIT_FIRST_DELAY;
+        
+        self.int_queue.clear();
+        self.pending_int = None;
+        self.send_status(3, Some(INIT_FIRST_DELAY), Some(Self::init_second_response));
     }
 
     pub fn init_second_response(&mut self) {
         const INIT_SECOND_DELAY: usize = 33_000_000 / 75;
-        
-        self.irq_delay = INIT_SECOND_DELAY;
-        self.send_status(2);
-        self.second_response = SecondResponse::None;
+
+        self.int_queue.push_back(CD_ROM_INT {
+            num: 2,
+            delay: INIT_SECOND_DELAY,
+            func: None,
+        });
     }
 
     pub fn pause(&mut self) {
-        self.send_status(3);
-        self.second_response = SecondResponse::Pause;
+        self.int_queue = self.int_queue.iter()
+            .filter(|int| {int.num != 1})
+            .map(|int| *int)
+            .collect();
+
+        if let Some(int) = self.pending_int {
+            if int.num == 1 {self.pending_int = None}
+        }
+
+        self.sector_buffer = [None; 2];
+
+        self.send_status(3, None, Some(Self::pause_second_response));
     }
 
     pub fn pause_second_response(&mut self) {
@@ -39,9 +50,11 @@ impl CD_ROM {
         self.status.remove(CD_ROM_STATUS::SEEK);
         self.status.remove(CD_ROM_STATUS::READ);
 
-        self.irq_delay = PAUSE_SECOND_DELAY[paused + speed];
-        self.send_status(2);
-        self.second_response = SecondResponse::None;
+        self.int_queue.push_back(CD_ROM_INT {
+            num: 2,
+            delay: PAUSE_SECOND_DELAY[paused + speed],
+            func: None
+        });
     }
 }
 
