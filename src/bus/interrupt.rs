@@ -48,14 +48,14 @@ impl Interrupt {
     pub fn write_mask32(&mut self, value: u32) {
         let old_irq = self.I_MASK & self.I_STAT;
         self.I_MASK = value & 0x7FF;
-        // println!("interrupt mask: {:08X}", self.I_MASK);
+        println!("interrupt mask: {:08X}", self.I_MASK);
         self.set_cop0(old_irq);
     }
 
     pub fn write_mask16(&mut self, value: u16) {
         let old_irq = self.I_MASK & self.I_STAT;
         self.I_MASK = value as u32;
-        // println!("interrupt mask: {:08X}", self.I_MASK);
+        println!("interrupt mask: {:08X}", self.I_MASK);
         self.set_cop0(old_irq);
     }
 

@@ -89,6 +89,7 @@ impl Interface {
         let addr = mask_region(addr);
         match addr {
             DRAM_START..DRAM_END => self.dram.read32((addr - DRAM_START) & 0x1FFFFF),
+            EXPANSION_1_START..EXPANSION_1_END => 0,
             SCRATCHPAD_START..SCRATCHPAD_END => self.scratchpad.read32(addr - SCRATCHPAD_START),
             BIOS_START..BIOS_END => self.bios.read32(addr - BIOS_START),
             MEM_CTRL_START..MEM_CTRL_END => 0,
@@ -114,9 +115,18 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            VOICE_START..VOICE_END => 0,
-            SPU_START..SPU_END => 0,
-            REVERB_START..REVERB_END => 0,
+            VOICE_START..VOICE_END => {
+                println!("Read 32-bit voice address: {addr:08X}");
+                0
+            },
+            SPU_START..SPU_END => {
+                println!("Read 32-bit SPU address: {addr:08X}");
+                0
+            },
+            REVERB_START..REVERB_END => {
+                println!("Read 32-bit reverb address: {addr:08X}");
+                0
+            },
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
         }
@@ -143,9 +153,21 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            VOICE_START..VOICE_END => 0,
-            SPU_START..SPU_END => 0,
-            REVERB_START..REVERB_END => 0,
+            VOICE_START..VOICE_END => {
+                println!("Read 16-bit voice address: {addr:08X}");
+                0x7FFF
+            },
+            SPU_START..SPU_END => {
+                println!("Read 16-bit SPU address: {addr:08X}");
+                match addr {
+                    0x1F80_1DAC => 0x0004,
+                    _ => 0,
+                }
+            },
+            REVERB_START..REVERB_END => {
+                println!("Read 16-bit reverb address: {addr:08X}");
+                0
+            },
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 16-bit access at unmapped address: {:08X}", addr),
         }
@@ -163,9 +185,18 @@ impl Interface {
             SIO1_START..SIO1_END => 0xFF,
             MEM_CTRL_2_START..MEM_CTRL_2_END => 0,
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
-            VOICE_START..VOICE_END => 0,
-            SPU_START..SPU_END => 0,
-            REVERB_START..REVERB_END => 0,
+            VOICE_START..VOICE_END => {
+                println!("Read 8-bit voice address: {addr:08X}");
+                0
+            },
+            SPU_START..SPU_END => {
+                println!("Read 8-bit SPU address: {addr:08X}");
+                0
+            },
+            REVERB_START..REVERB_END => {
+                println!("Read 8-bit reverb address: {addr:08X}");
+                0
+            },
             EXPANSION_2_START..EXPANSION_2_END => 0,
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 8-bit access at unmapped address: {:08X}", addr),

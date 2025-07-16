@@ -164,6 +164,9 @@ impl GPU {
         });
         self.gpu_status.set_ready_to_receive_dma_block(1);
         self.gpu_status.set_drawing_even_odd_lines_in_interlace_mode((!self.even_odd_frame) as u8 & (1 >> (!self.gpu_status.vertical_interlace() & 1)));
+        
+        //println!("{:08X}", u32::from_le_bytes(self.gpu_status.bytes));
+        
         u32::from_le_bytes(self.gpu_status.bytes)
     }
 
@@ -262,6 +265,7 @@ impl GPU {
                                 0x6A => self.draw_transparent_single_pixel_monochrome_rect(word),
                                 0x70 => self.draw_8x8_monochrome_rect(word),
                                 0x72 => self.draw_transparent_8x8_monochrome_rect(word),
+                                0x74 => self.draw_textured_8x8_rect(),
                                 0x78 => self.draw_16x16_monochrome_rect(word),
                                 0x7A => self.draw_transparent_16x16_monochrome_rect(word),
                                 _ => {

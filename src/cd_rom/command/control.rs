@@ -1,4 +1,4 @@
-use crate::cd_rom::{CD_ROM, CD_ROM_INT, CD_ROM_MODE, CD_ROM_STATUS};
+use crate::cd_rom::{CD_ROM, CD_ROM_MODE, CD_ROM_STATUS};
 
 impl CD_ROM {
     pub fn setmode(&mut self) {
@@ -20,11 +20,7 @@ impl CD_ROM {
     pub fn init_second_response(&mut self) {
         const INIT_SECOND_DELAY: usize = 33_000_000 / 75;
 
-        self.int_queue.push_back(CD_ROM_INT {
-            num: 2,
-            delay: INIT_SECOND_DELAY,
-            func: None,
-        });
+        self.send_status(2, Some(INIT_SECOND_DELAY), None);
     }
 
     pub fn pause(&mut self) {
@@ -37,8 +33,6 @@ impl CD_ROM {
             if int.num == 1 {self.pending_int = None}
         }
 
-        self.sector_buffer = [None; 2];
-
         self.send_status(3, None, Some(Self::pause_second_response));
     }
 
@@ -46,15 +40,13 @@ impl CD_ROM {
         let paused = (!self.status.intersects(const {CD_ROM_STATUS::from_bits_truncate(0xE0)}) as usize) << 1;
         let speed = self.mode.contains(CD_ROM_MODE::SPEED) as usize;
 
+        self.sector_buffer = [None; 2];
+
         self.status.remove(CD_ROM_STATUS::PLAY);
         self.status.remove(CD_ROM_STATUS::SEEK);
         self.status.remove(CD_ROM_STATUS::READ);
 
-        self.int_queue.push_back(CD_ROM_INT {
-            num: 2,
-            delay: PAUSE_SECOND_DELAY[paused + speed],
-            func: None
-        });
+        self.send_status(2, Some(PAUSE_SECOND_DELAY[paused + speed]), None);
     }
 }
 

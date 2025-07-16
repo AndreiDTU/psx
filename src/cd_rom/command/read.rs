@@ -3,12 +3,16 @@ use crate::cd_rom::{bin::sector::Sector, CD_ROM, CD_ROM_INT, CD_ROM_MODE, CD_ROM
 impl CD_ROM {
     pub fn readN(&mut self) {
         self.sector_pointer = 0;
+        
+        let delay = if self.seek_target == self.read_addr {Some(444000)} else {None};
         self.read_addr = self.seek_target;
-        self.send_status(3, None, Some(Self::readN_second_response));
+
+        self.send_status(3, delay, Some(Self::readN_second_response));
     }
 
     pub fn readN_second_response(&mut self) {
         println!("{:#?}", self.read_addr);
+        self.sector_pointer = 0;
         match self.disk.get(&self.read_addr) {
             Some(sector) => {
                 self.load_sector(*sector);

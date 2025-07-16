@@ -891,8 +891,12 @@ impl GPU {
         let mut uv0 = uv0;
         let mut uv1 = uv1;
 
+        let mut c0 = c0;
+        let mut c1 = c1;
+
         if Vertex::ensure_vertex_order(&mut v0, &mut v1, v2) {
             std::mem::swap(&mut uv0, &mut uv1);
+            std::mem::swap(&mut c0, &mut c1);
         }
 
         let [min_x, max_x, min_y, max_y] = Vertex::triangle_bounding_box(v0, v1, v2, self.drawing_area.0, self.drawing_area.1).to_array();
@@ -906,12 +910,12 @@ impl GPU {
                             let [px, py] = pixel.translate(self.drawing_offset).coords.to_array();
 
                             let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
+                            let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let barycentric_uv_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let [u, v] = (interpolate_uv_coords(barycentric_uv_coords, [uv0, uv1, uv2]) + base).to_array();
 
-                            let barycentric_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
-                            let [u, v] = (interpolate_uv_coords(barycentric_coords, [uv0, uv1, uv2]) + base).to_array();
+                            let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel);
                             let tex_color = self.vram.read16(((v << 10) + u) << 1);
-
-                            let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]);
 
                             let px_idx = [
                                 tex_color,
@@ -937,7 +941,24 @@ impl GPU {
                     }
                 }
                 1 => todo!(),
-                2 => todo!(),
+                2 => {
+                    for x in min_x..max_x {
+                        let pixel: Vertex = (x, y).into();
+                        if pixel.is_inside_triangle(v0, v1, v2) {
+                            let tex_pixel: Vertex = (min_x + ((x - min_x) >> 2), y).into();
+                            let barycentric_coords = pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let barycentric_uv_coords = tex_pixel.compute_barycentric_coordinates(v0, v1, v2);
+                            let [u, v] = (interpolate_uv_coords(barycentric_uv_coords, [uv0, uv1, uv2]) + base).to_array();
+
+                            let color = Color::interpolate_color(barycentric_coords, [c0, c1, c2]).apply_dithering(pixel);
+                            let tex_color = self.vram.read16(((v << 10) + u) << 1);
+
+                            if tex_color != 0 {
+                                self.draw_pixel(Color::from(tex_color).modulate(color.into()).into(), pixel.into());
+                            }
+                        }
+                    }
+                }
                 3 => panic!("Reserved color depth"),
                 _ => unsafe { unreachable_unchecked() }
             };

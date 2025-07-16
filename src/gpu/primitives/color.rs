@@ -72,7 +72,7 @@ impl Color {
     pub fn interpolate_color(lambda: DVec3, colors: [Color; 3]) -> Color {
         let colors_rgb = DMat3::from_cols(colors[0].rgb.as_dvec3(), colors[1].rgb.as_dvec3(), colors[2].rgb.as_dvec3());
 
-        let rgb = (colors_rgb * lambda).as_u8vec3();
+        let rgb = (colors_rgb * lambda).round().as_u8vec3();
 
         Color { rgb }
     }

@@ -24,7 +24,7 @@ const NTSC_FRAME_TIME: Duration = Duration::from_nanos(16_866_250);
 fn main() -> Result<(), anyhow::Error> {
     let args: Vec<_> = env::args().collect();
     let disk = &args[1];
-    // let exe_binding = std::fs::read("getloc.exe").unwrap();
+    // let exe_binding = std::fs::read("RenderTexturePolygon15BPPDither.exe").unwrap();
     // let exe = exe_binding.as_slice();
 
     let sdl_context = sdl2::init().unwrap();

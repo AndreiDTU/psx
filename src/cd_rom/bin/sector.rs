@@ -18,7 +18,7 @@ impl Sector {
             Sector {
                 sub_header: SubHeader::from_bytes(&bytes[16..=23]),
                 data: *bytes[12..].first_chunk().unwrap_or({
-                    for i in 24..bytes.len() {
+                    for i in 12..bytes.len() {
                         data[i - 12] = bytes[i];
                     }
 

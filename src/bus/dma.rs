@@ -50,7 +50,7 @@ impl DMA {
                     2 => self.linked_list_transfer(channel),
                     _ => self.block_transfer(channel),
                 }
-                3 => self.block_transfer(channel),
+                3 => if self.clock % 40 == 0 {self.block_transfer(channel)},
                 4 => panic!("SPU not implemented."),
                 5 => panic!("PIO not implemented."),
                 6 => self.block_transfer(channel),
@@ -156,7 +156,7 @@ impl DMA {
                     _ => panic!("Unhandled DMA channel {channel} Device -> RAM"),
                 };
 
-                // println!("DMA: [{:08X}] <- [{:08X}]", addr, value);
+                // if channel == 3 {println!("DMA: [{:08X}] <- ${:08X}", addr, value)};
                 self.interface.borrow_mut().write32(addr & 0x001F_FFFC, value);
             }
 
