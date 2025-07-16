@@ -6,7 +6,7 @@ use std::{cell::RefCell, ops::{Index, IndexMut}, path::Path, rc::Rc, time::{Dura
 
 use sdl2::{event::Event, keyboard::Keycode, pixels::PixelFormatEnum};
 
-use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}, peripheral::{devices::{digital_pad::DigitalPad, Device, DigitalSwitch}, ports::sio0::SIO0}};
+use crate::{bus::{dma::DMA, interface::Interface, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, cpu::{system_control::SystemControl, CPU}, peripheral::{devices::{digital_pad::DigitalPad, Device, DigitalSwitch}, ports::sio0::SIO0}, spu::SPU};
 
 mod bus;
 mod bios;
@@ -15,6 +15,7 @@ mod gpu;
 mod ram;
 mod cd_rom;
 mod peripheral;
+mod spu;
 
 const VRAM_WIDTH: u32 = 1024;
 const VRAM_HEIGHT: u32 = 512;
@@ -39,6 +40,7 @@ fn main() -> Result<(), anyhow::Error> {
     let mut texture = creator.create_texture_target(PixelFormatEnum::RGB24, VRAM_WIDTH, VRAM_HEIGHT)?;
     let mut event_pump = sdl_context.event_pump().unwrap();
 
+    let spu = Rc::new(RefCell::new(SPU::new()));
     let system_control = Rc::new(RefCell::new(SystemControl::new()));
     let interrupt = Rc::new(RefCell::new(Interrupt::new(system_control.clone())));
     let sio0 = Rc::new(RefCell::new(SIO0::new([const { None }; 2], interrupt.clone())));
@@ -48,7 +50,7 @@ fn main() -> Result<(), anyhow::Error> {
     sio0.borrow_mut().connect_device(pad2.clone(), 1);
     let timer = Rc::new(RefCell::new(Timer::new(interrupt.clone())));
     let cd_rom = Rc::new(RefCell::new(CD_ROM::new(interrupt.clone(), disk)?));
-    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone(), sio0.clone())?));
+    let interface = Rc::new(RefCell::new(Interface::new(Path::new("SCPH1001.bin"), interrupt, cd_rom.clone(), timer.clone(), sio0.clone(), spu.clone())?));
     let dma_running = Rc::new(RefCell::new(false));
     let dma = Rc::new(RefCell::new(DMA::new(interface.clone(), interface.borrow_mut().interrupt.clone(), dma_running.clone())));
     interface.borrow_mut().dma = Rc::downgrade(&dma);

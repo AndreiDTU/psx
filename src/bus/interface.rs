@@ -1,6 +1,6 @@
 use std::{cell::RefCell, path::Path, rc::{Rc, Weak}};
 
-use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, gpu::GPU, peripheral::ports::sio0::SIO0, ram::RAM};
+use crate::{bios::BIOS, bus::{dma::DMA, interrupt::Interrupt, timer::Timer}, cd_rom::CD_ROM, gpu::GPU, peripheral::ports::sio0::SIO0, ram::RAM, spu::SPU};
 
 const DRAM_SIZE: usize = 2 * 1024 * 1024;
 const DRAM_START: u32 = 0x0000_0000;
@@ -67,6 +67,7 @@ pub struct Interface {
     pub dram: RAM,
     pub scratchpad: RAM,
     pub gpu: GPU,
+    spu: Rc<RefCell<SPU>>,
     pub interrupt: Rc<RefCell<Interrupt>>,
     cd_rom: Rc<RefCell<CD_ROM>>,
     timer: Rc<RefCell<Timer>>,
@@ -74,13 +75,13 @@ pub struct Interface {
 }
 
 impl Interface {
-    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>, timer: Rc<RefCell<Timer>>, sio0: Rc<RefCell<SIO0>>) -> Result<Self, anyhow::Error> {
+    pub fn new(path: &Path, interrupt: Rc<RefCell<Interrupt>>, cd_rom: Rc<RefCell<CD_ROM>>, timer: Rc<RefCell<Timer>>, sio0: Rc<RefCell<SIO0>>, spu: Rc<RefCell<SPU>>) -> Result<Self, anyhow::Error> {
         let bios = BIOS::new(path)?;
         let dram = RAM::new(DRAM_SIZE);
         let scratchpad = RAM::new(SCRATCHPAD_SIZE);
         let gpu = GPU::new(interrupt.clone(), timer.clone());
 
-        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, interrupt, timer, cd_rom, sio0 })
+        Ok(Self { bios, dma: Weak::new(), dram, scratchpad, gpu, spu, interrupt, timer, cd_rom, sio0 })
     }
 
     pub fn read32(&mut self, addr: u32) -> u32 {
@@ -117,15 +118,15 @@ impl Interface {
             }
             VOICE_START..VOICE_END => {
                 println!("Read 32-bit voice address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_voice32(addr - VOICE_START)
             },
             SPU_START..SPU_END => {
                 println!("Read 32-bit SPU address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_control32(addr - SPU_START)
             },
             REVERB_START..REVERB_END => {
                 println!("Read 32-bit reverb address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_reverb32(addr - REVERB_START)
             },
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read access at unmapped address: {:08X}", addr),
@@ -155,18 +156,18 @@ impl Interface {
             }
             VOICE_START..VOICE_END => {
                 println!("Read 16-bit voice address: {addr:08X}");
-                0x7FFF
+                self.spu.borrow_mut().read_voice16(addr - VOICE_START)
             },
             SPU_START..SPU_END => {
                 println!("Read 16-bit SPU address: {addr:08X}");
                 match addr {
                     0x1F80_1DAC => 0x0004,
-                    _ => 0,
+                    _ => self.spu.borrow_mut().read_control16(addr - SPU_START),
                 }
             },
             REVERB_START..REVERB_END => {
                 println!("Read 16-bit reverb address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_reverb16(addr - REVERB_START)
             },
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
             _ => panic!("Read 16-bit access at unmapped address: {:08X}", addr),
@@ -187,15 +188,15 @@ impl Interface {
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().read8(addr - CD_ROM_START),
             VOICE_START..VOICE_END => {
                 println!("Read 8-bit voice address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_voice8(addr - VOICE_START)
             },
             SPU_START..SPU_END => {
                 println!("Read 8-bit SPU address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_control8(addr - SPU_START)
             },
             REVERB_START..REVERB_END => {
                 println!("Read 8-bit reverb address: {addr:08X}");
-                0
+                self.spu.borrow_mut().read_reverb8(addr - REVERB_START)
             },
             EXPANSION_2_START..EXPANSION_2_END => 0,
             CACHE_CONTROL_START..=CACHE_CONTROL_END => 0,
@@ -234,9 +235,9 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            VOICE_START..VOICE_END => {},
-            SPU_START..SPU_END => {},
-            REVERB_START..REVERB_END => {},
+            VOICE_START..VOICE_END => self.spu.borrow_mut().write_voice32(addr - VOICE_START, value),
+            SPU_START..SPU_END => self.spu.borrow_mut().write_control32(addr - SPU_START, value),
+            REVERB_START..REVERB_END => self.spu.borrow_mut().write_reverb32(addr - REVERB_START, value),
             CACHE_CONTROL_START..=CACHE_CONTROL_END => {
                 // println!("Write to CACHE_CONTROL")
             }
@@ -266,9 +267,9 @@ impl Interface {
                     _ => unreachable!(),
                 }
             }
-            VOICE_START..VOICE_END => {},
-            SPU_START..SPU_END => {},
-            REVERB_START..REVERB_END => {},
+            VOICE_START..VOICE_END => self.spu.borrow_mut().write_voice16(addr - VOICE_START, value),
+            SPU_START..SPU_END => self.spu.borrow_mut().write_control16(addr - SPU_START, value),
+            REVERB_START..REVERB_END => self.spu.borrow_mut().write_reverb16(addr - REVERB_START, value),
             PCSX_START..PCSX_END => {
                 match addr - PCSX_START {
                     2 => println!("Exited with code {value:04X}"),
@@ -290,9 +291,9 @@ impl Interface {
             SIO1_START..SIO1_END => {},
             MEM_CTRL_2_START..MEM_CTRL_2_END => {},
             CD_ROM_START..CD_ROM_END => self.cd_rom.borrow_mut().write8(addr - CD_ROM_START, value),
-            VOICE_START..VOICE_END => {},
-            SPU_START..SPU_END => {},
-            REVERB_START..REVERB_END => {},
+            VOICE_START..VOICE_END => self.spu.borrow_mut().write_voice8(addr - VOICE_START, value),
+            SPU_START..SPU_END => self.spu.borrow_mut().write_control8(addr - SPU_START, value),
+            REVERB_START..REVERB_END => self.spu.borrow_mut().write_reverb8(addr - REVERB_START, value),
             EXPANSION_2_START..EXPANSION_2_END => {}
             _ => panic!("Write 8-bit access at unmapped address: {:08X}", addr),
         }
